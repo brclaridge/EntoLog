@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fc_primary">#2E7D32</color>
+    <color name="fc_on_primary">#FFFFFF</color>
+    <color name="fc_primary_container">#A5D6A7</color>
+    <color name="fc_secondary">#558B2F</color>
+</resources>

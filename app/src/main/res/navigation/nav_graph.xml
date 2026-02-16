@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/homeFragment">
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.spatium.fieldcollect.ui.home.HomeFragment"
+        android:label="FieldCollect"
+        tools:layout="@layout/fragment_home">
+
+        <action
+            android:id="@+id/action_home_to_specimen"
+            app:destination="@id/specimenFormFragment" />
+
+        <action
+            android:id="@+id/action_home_to_trap"
+            app:destination="@id/trapSampleFormFragment" />
+
+        <action
+            android:id="@+id/action_home_to_records"
+            app:destination="@id/recordsListFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/specimenFormFragment"
+        android:name="com.spatium.fieldcollect.ui.specimen.SpecimenFormFragment"
+        android:label="New Collecting Event"
+        tools:layout="@layout/fragment_specimen_form">
+
+        <argument
+            android:name="eventUuid"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/trapSampleFormFragment"
+        android:name="com.spatium.fieldcollect.ui.trap.TrapSampleFormFragment"
+        android:label="New Trap Sample"
+        tools:layout="@layout/fragment_trap_sample_form">
+
+        <argument
+            android:name="eventUuid"
+            app:argType="string"
+            app:nullable="true"
+            android:defaultValue="@null" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/recordsListFragment"
+        android:name="com.spatium.fieldcollect.ui.records.RecordsListFragment"
+        android:label="Records"
+        tools:layout="@layout/fragment_records_list">
+
+        <action
+            android:id="@+id/action_records_to_specimen"
+            app:destination="@id/specimenFormFragment" />
+
+        <action
+            android:id="@+id/action_records_to_trap"
+            app:destination="@id/trapSampleFormFragment" />
+    </fragment>
+
+</navigation>

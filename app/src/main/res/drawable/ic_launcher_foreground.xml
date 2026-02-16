@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple bug/insect icon outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30
+            C48,30 43,35 43,41
+            L43,45
+            C43,45 38,43 35,45
+            L39,49
+            C39,49 38,52 38,55
+            L33,55
+            L33,59
+            L38,59
+            C38,62 39,65 41,67
+            L37,72
+            L41,74
+            L44,70
+            C47,72 51,73 54,73
+            C57,73 61,72 64,70
+            L67,74
+            L71,72
+            L67,67
+            C69,65 70,62 70,59
+            L75,59
+            L75,55
+            L70,55
+            C70,52 69,49 69,49
+            L73,45
+            C70,43 65,45 65,45
+            L65,41
+            C65,35 60,30 54,30Z
+            M50,48
+            C52,48 53,50 53,52
+            C53,54 52,56 50,56
+            C48,56 47,54 47,52
+            C47,50 48,48 50,48Z
+            M58,48
+            C60,48 61,50 61,52
+            C61,54 60,56 58,56
+            C56,56 55,54 55,52
+            C55,50 56,48 58,48Z" />
+</vector>

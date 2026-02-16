@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FieldCollect Label Printer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="page-header">
+        <h1>FieldCollect</h1>
+        <div class="header-actions">
+            <a href="{{ url_for('new_event') }}" class="btn btn-new">+ New Event</a>
+            <form method="POST" action="{{ url_for('sync_phone') }}" class="sync-form">
+                <input type="text" name="phone_ip" placeholder="Phone IP:port" class="sync-input" id="phone-ip-input">
+                <button type="submit" class="btn btn-sync">Sync Phone</button>
+            </form>
+            <button type="button" class="btn btn-settings" onclick="openSettingsModal()">Settings</button>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flashes">
+        {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <form method="GET" action="{{ url_for('index') }}" class="toolbar">
+        <label class="toolbar-search">
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="Search events...">
+        </label>
+        <label class="toolbar-sort">Sort 1
+            <select name="sort1">
+                <option value="" {{ '' == (sort1 or '') and 'selected' or '' }}>None</option>
+                <option value="date" {{ 'date' == (sort1 or '') and 'selected' or '' }}>Date</option>
+                <option value="type" {{ 'type' == (sort1 or '') and 'selected' or '' }}>Type</option>
+                <option value="country" {{ 'country' == (sort1 or '') and 'selected' or '' }}>Country</option>
+                <option value="state" {{ 'state' == (sort1 or '') and 'selected' or '' }}>State/Province</option>
+                <option value="county" {{ 'county' == (sort1 or '') and 'selected' or '' }}>County</option>
+                <option value="locality" {{ 'locality' == (sort1 or '') and 'selected' or '' }}>Locality</option>
+                <option value="collectors" {{ 'collectors' == (sort1 or '') and 'selected' or '' }}>Collectors</option>
+                <option value="technique" {{ 'technique' == (sort1 or '') and 'selected' or '' }}>Technique</option>
+                <option value="status" {{ 'status' == (sort1 or '') and 'selected' or '' }}>Status (Active first)</option>
+                <option value="code" {{ 'code' == (sort1 or '') and 'selected' or '' }}>Collection Code</option>
+            </select>
+        </label>
+        <label class="toolbar-sort">Sort 2
+            <select name="sort2">
+                <option value="" {{ '' == (sort2 or '') and 'selected' or '' }}>None</option>
+                <option value="date" {{ 'date' == (sort2 or '') and 'selected' or '' }}>Date</option>
+                <option value="type" {{ 'type' == (sort2 or '') and 'selected' or '' }}>Type</option>
+                <option value="country" {{ 'country' == (sort2 or '') and 'selected' or '' }}>Country</option>
+                <option value="state" {{ 'state' == (sort2 or '') and 'selected' or '' }}>State/Province</option>
+                <option value="county" {{ 'county' == (sort2 or '') and 'selected' or '' }}>County</option>
+                <option value="locality" {{ 'locality' == (sort2 or '') and 'selected' or '' }}>Locality</option>
+                <option value="collectors" {{ 'collectors' == (sort2 or '') and 'selected' or '' }}>Collectors</option>
+                <option value="technique" {{ 'technique' == (sort2 or '') and 'selected' or '' }}>Technique</option>
+                <option value="status" {{ 'status' == (sort2 or '') and 'selected' or '' }}>Status (Active first)</option>
+                <option value="code" {{ 'code' == (sort2 or '') and 'selected' or '' }}>Collection Code</option>
+            </select>
+        </label>
+        <label class="toolbar-sort">Sort 3
+            <select name="sort3">
+                <option value="" {{ '' == (sort3 or '') and 'selected' or '' }}>None</option>
+                <option value="date" {{ 'date' == (sort3 or '') and 'selected' or '' }}>Date</option>
+                <option value="type" {{ 'type' == (sort3 or '') and 'selected' or '' }}>Type</option>
+                <option value="country" {{ 'country' == (sort3 or '') and 'selected' or '' }}>Country</option>
+                <option value="state" {{ 'state' == (sort3 or '') and 'selected' or '' }}>State/Province</option>
+                <option value="county" {{ 'county' == (sort3 or '') and 'selected' or '' }}>County</option>
+                <option value="locality" {{ 'locality' == (sort3 or '') and 'selected' or '' }}>Locality</option>
+                <option value="collectors" {{ 'collectors' == (sort3 or '') and 'selected' or '' }}>Collectors</option>
+                <option value="technique" {{ 'technique' == (sort3 or '') and 'selected' or '' }}>Technique</option>
+                <option value="status" {{ 'status' == (sort3 or '') and 'selected' or '' }}>Status (Active first)</option>
+                <option value="code" {{ 'code' == (sort3 or '') and 'selected' or '' }}>Collection Code</option>
+            </select>
+        </label>
+        <label class="toolbar-sort">Sort 4
+            <select name="sort4">
+                <option value="" {{ '' == (sort4 or '') and 'selected' or '' }}>None</option>
+                <option value="date" {{ 'date' == (sort4 or '') and 'selected' or '' }}>Date</option>
+                <option value="type" {{ 'type' == (sort4 or '') and 'selected' or '' }}>Type</option>
+                <option value="country" {{ 'country' == (sort4 or '') and 'selected' or '' }}>Country</option>
+                <option value="state" {{ 'state' == (sort4 or '') and 'selected' or '' }}>State/Province</option>
+                <option value="county" {{ 'county' == (sort4 or '') and 'selected' or '' }}>County</option>
+                <option value="locality" {{ 'locality' == (sort4 or '') and 'selected' or '' }}>Locality</option>
+                <option value="collectors" {{ 'collectors' == (sort4 or '') and 'selected' or '' }}>Collectors</option>
+                <option value="technique" {{ 'technique' == (sort4 or '') and 'selected' or '' }}>Technique</option>
+                <option value="status" {{ 'status' == (sort4 or '') and 'selected' or '' }}>Status (Active first)</option>
+                <option value="code" {{ 'code' == (sort4 or '') and 'selected' or '' }}>Collection Code</option>
+            </select>
+        </label>
+        <button type="submit" class="btn btn-generate">Apply</button>
+        <a class="btn btn-cancel" href="{{ url_for('index') }}">Reset</a>
+    </form>
+
+    {% if selected_items or search_results or active_all_items or archived_all_items %}
+    <form method="POST" action="{{ url_for('generate') }}">
+        <div class="controls">
+            <button type="submit" class="btn btn-generate">Generate Labels PDF</button>
+            <label class="select-all-label">
+                <input type="checkbox" id="selectAll" onchange="toggleAll(this)" class="checkbox-lg"> Select All
+            </label>
+        </div>
+
+        {% if selected_items %}
+        <div class="section-head">Selected ({{ selected_items|length }})</div>
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Qty</th>
+                    <th>Event ID</th>
+                    <th>Country</th>
+                    <th>State</th>
+                    <th>County</th>
+                    <th>Locality</th>
+                    <th>Date</th>
+                    <th>Collectors</th>
+                    <th>Technique</th>
+                    <th>Archived</th>
+                    <th>Map</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in selected_items %}
+                <tr class="clickable-row" data-href="{{ url_for('edit_event', idx=item.idx) }}">
+                    <td class="select-cell"><input type="checkbox" name="selected" value="{{ item.event.uuid }}" checked class="checkbox-lg"></td>
+                    <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td>{{ item.event.country or "" }}</td>
+                    <td>{{ item.event.stateProvince or "" }}</td>
+                    <td>{{ item.event.county or "" }}</td>
+                    <td>{{ item.event.locality or "" }}</td>
+                    <td>
+                        {% if item.event.startDateTime and item.event.endDateTime %}
+                            {{ item.event.startDateTime|daterange(item.event.endDateTime, date_format) }}
+                        {% else %}
+                            {{ (item.event.createdAt or "")|formatdate(date_format) }}
+                        {% endif %}
+                    </td>
+                    <td>{{ (item.event.collectors or [])|join(", ") }}</td>
+                    <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
+                    <td>
+                        {% if item.event.latitude is not none and item.event.longitude is not none %}
+                        <a class="btn-sm btn-edit"
+                           target="_blank"
+                           href="https://earth.google.com/web/search/{{ item.event.latitude }},{{ item.event.longitude }}">
+                            Earth
+                        </a>
+                        {% else %}
+                        <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="photo-count-cell">
+                        {% set pc = photo_counts.get(item.event.uuid, 0) %}
+                        {% if pc > 0 %}
+                        <span class="photo-badge" title="{{ pc }} photo{{ 's' if pc != 1 else '' }}">&#x1F4F7;{{ pc }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="actions">
+                        <button type="button" class="btn-sm btn-dup"
+                                onclick="showDupModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-created="{{ (item.event.createdAt or '')[:10] }}"
+                                data-start="{{ (item.event.startDateTime or '')[:10] }}"
+                                data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
+                        <button type="button" class="btn-sm btn-del"
+                                onclick="showDeleteModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-date="{% if item.event.startDateTime and item.event.endDateTime %}{{ item.event.startDateTime[:10] }} – {{ item.event.endDateTime[:10] }}{% else %}{{ (item.event.createdAt or '')[:10] }}{% endif %}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if search_results %}
+        <div class="section-head">Search Results ({{ search_results|length }})</div>
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Qty</th>
+                    <th>Event ID</th>
+                    <th>Country</th>
+                    <th>State</th>
+                    <th>County</th>
+                    <th>Locality</th>
+                    <th>Date</th>
+                    <th>Collectors</th>
+                    <th>Technique</th>
+                    <th>Archived</th>
+                    <th>Map</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in search_results %}
+                <tr class="clickable-row" data-href="{{ url_for('edit_event', idx=item.idx) }}">
+                    <td class="select-cell"><input type="checkbox" name="selected" value="{{ item.event.uuid }}"
+                               class="checkbox-lg"
+                               {% if item.event.uuid in selected %}checked{% endif %}></td>
+                    <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td>{{ item.event.country or "" }}</td>
+                    <td>{{ item.event.stateProvince or "" }}</td>
+                    <td>{{ item.event.county or "" }}</td>
+                    <td>{{ item.event.locality or "" }}</td>
+                    <td>
+                        {% if item.event.startDateTime and item.event.endDateTime %}
+                            {{ item.event.startDateTime|daterange(item.event.endDateTime, date_format) }}
+                        {% else %}
+                            {{ (item.event.createdAt or "")|formatdate(date_format) }}
+                        {% endif %}
+                    </td>
+                    <td>{{ (item.event.collectors or [])|join(", ") }}</td>
+                    <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
+                    <td>
+                        {% if item.event.latitude is not none and item.event.longitude is not none %}
+                        <a class="btn-sm btn-edit"
+                           target="_blank"
+                           href="https://earth.google.com/web/search/{{ item.event.latitude }},{{ item.event.longitude }}">
+                            Earth
+                        </a>
+                        {% else %}
+                        <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="photo-count-cell">
+                        {% set pc = photo_counts.get(item.event.uuid, 0) %}
+                        {% if pc > 0 %}
+                        <span class="photo-badge" title="{{ pc }} photo{{ 's' if pc != 1 else '' }}">&#x1F4F7;{{ pc }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="actions">
+                        <button type="button" class="btn-sm btn-dup"
+                                onclick="showDupModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-created="{{ (item.event.createdAt or '')[:10] }}"
+                                data-start="{{ (item.event.startDateTime or '')[:10] }}"
+                                data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
+                        <button type="button" class="btn-sm btn-del"
+                                onclick="showDeleteModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-date="{% if item.event.startDateTime and item.event.endDateTime %}{{ item.event.startDateTime[:10] }} – {{ item.event.endDateTime[:10] }}{% else %}{{ (item.event.createdAt or '')[:10] }}{% endif %}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if active_all_items %}
+        <div class="section-head">Active Events ({{ active_all_items|length }})</div>
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Qty</th>
+                    <th>Event ID</th>
+                    <th>Country</th>
+                    <th>State</th>
+                    <th>County</th>
+                    <th>Locality</th>
+                    <th>Date</th>
+                    <th>Collectors</th>
+                    <th>Technique</th>
+                    <th>Archived</th>
+                    <th>Map</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in active_all_items %}
+                <tr class="clickable-row" data-href="{{ url_for('edit_event', idx=item.idx) }}">
+                    <td class="select-cell"><input type="checkbox" name="selected" value="{{ item.event.uuid }}"
+                               class="checkbox-lg"
+                               {% if item.event.uuid in selected %}checked{% endif %}></td>
+                    <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td>{{ item.event.country or "" }}</td>
+                    <td>{{ item.event.stateProvince or "" }}</td>
+                    <td>{{ item.event.county or "" }}</td>
+                    <td>{{ item.event.locality or "" }}</td>
+                    <td>
+                        {% if item.event.startDateTime and item.event.endDateTime %}
+                            {{ item.event.startDateTime|daterange(item.event.endDateTime, date_format) }}
+                        {% else %}
+                            {{ (item.event.createdAt or "")|formatdate(date_format) }}
+                        {% endif %}
+                    </td>
+                    <td>{{ (item.event.collectors or [])|join(", ") }}</td>
+                    <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
+                    <td>
+                        {% if item.event.latitude is not none and item.event.longitude is not none %}
+                        <a class="btn-sm btn-edit"
+                           target="_blank"
+                           href="https://earth.google.com/web/search/{{ item.event.latitude }},{{ item.event.longitude }}">
+                            Earth
+                        </a>
+                        {% else %}
+                        <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="photo-count-cell">
+                        {% set pc = photo_counts.get(item.event.uuid, 0) %}
+                        {% if pc > 0 %}
+                        <span class="photo-badge" title="{{ pc }} photo{{ 's' if pc != 1 else '' }}">&#x1F4F7;{{ pc }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="actions">
+                        <button type="button" class="btn-sm btn-dup"
+                                onclick="showDupModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-created="{{ (item.event.createdAt or '')[:10] }}"
+                                data-start="{{ (item.event.startDateTime or '')[:10] }}"
+                                data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
+                        <button type="button" class="btn-sm btn-del"
+                                onclick="showDeleteModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-date="{% if item.event.startDateTime and item.event.endDateTime %}{{ item.event.startDateTime[:10] }} – {{ item.event.endDateTime[:10] }}{% else %}{{ (item.event.createdAt or '')[:10] }}{% endif %}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if archived_all_items %}
+        <div class="section-head">Archived Events ({{ archived_all_items|length }})</div>
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Qty</th>
+                    <th>Event ID</th>
+                    <th>Country</th>
+                    <th>State</th>
+                    <th>County</th>
+                    <th>Locality</th>
+                    <th>Date</th>
+                    <th>Collectors</th>
+                    <th>Technique</th>
+                    <th>Archived</th>
+                    <th>Map</th>
+                    <th></th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in archived_all_items %}
+                <tr class="clickable-row" data-href="{{ url_for('edit_event', idx=item.idx) }}">
+                    <td class="select-cell"><input type="checkbox" name="selected" value="{{ item.event.uuid }}"
+                               class="checkbox-lg"
+                               {% if item.event.uuid in selected %}checked{% endif %}></td>
+                    <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td>{{ item.event.country or "" }}</td>
+                    <td>{{ item.event.stateProvince or "" }}</td>
+                    <td>{{ item.event.county or "" }}</td>
+                    <td>{{ item.event.locality or "" }}</td>
+                    <td>
+                        {% if item.event.startDateTime and item.event.endDateTime %}
+                            {{ item.event.startDateTime|daterange(item.event.endDateTime, date_format) }}
+                        {% else %}
+                            {{ (item.event.createdAt or "")|formatdate(date_format) }}
+                        {% endif %}
+                    </td>
+                    <td>{{ (item.event.collectors or [])|join(", ") }}</td>
+                    <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
+                    <td>
+                        {% if item.event.latitude is not none and item.event.longitude is not none %}
+                        <a class="btn-sm btn-edit"
+                           target="_blank"
+                           href="https://earth.google.com/web/search/{{ item.event.latitude }},{{ item.event.longitude }}">
+                            Earth
+                        </a>
+                        {% else %}
+                        <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="photo-count-cell">
+                        {% set pc = photo_counts.get(item.event.uuid, 0) %}
+                        {% if pc > 0 %}
+                        <span class="photo-badge" title="{{ pc }} photo{{ 's' if pc != 1 else '' }}">&#x1F4F7;{{ pc }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="actions">
+                        <button type="button" class="btn-sm btn-dup"
+                                onclick="showDupModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-created="{{ (item.event.createdAt or '')[:10] }}"
+                                data-start="{{ (item.event.startDateTime or '')[:10] }}"
+                                data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
+                        <button type="button" class="btn-sm btn-del"
+                                onclick="showDeleteModal(this)"
+                                data-idx="{{ item.idx }}"
+                                data-code="{{ item.event.collectionCode or '' }}"
+                                data-country="{{ item.event.country or '' }}"
+                                data-state="{{ item.event.stateProvince or '' }}"
+                                data-county="{{ item.event.county or '' }}"
+                                data-locality="{{ item.event.locality or '' }}"
+                                data-date="{% if item.event.startDateTime and item.event.endDateTime %}{{ item.event.startDateTime[:10] }} – {{ item.event.endDateTime[:10] }}{% else %}{{ (item.event.createdAt or '')[:10] }}{% endif %}"
+                                data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
+                                data-technique="{{ item.event.collectionTechnique or '' }}">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if active_all_items or archived_all_items %}
+        <div class="controls bottom">
+            <button type="submit" class="btn btn-generate">Generate Labels PDF</button>
+        </div>
+        {% endif %}
+        {% endif %}
+    </form>
+    {% else %}
+    <p class="empty">No collecting events found. Make sure you have synced data from the app, or create a new event.</p>
+    {% endif %}
+
+    <script>
+        var SELECTED_STORAGE_KEY = "fieldcollect.selected.events";
+
+        function persistSelectedState() {
+            var selected = [];
+            document.querySelectorAll('input[name="selected"]:checked').forEach(function (cb) {
+                selected.push(cb.value);
+            });
+            localStorage.setItem(SELECTED_STORAGE_KEY, JSON.stringify(selected));
+        }
+
+        function restoreSelectedState() {
+            var raw = localStorage.getItem(SELECTED_STORAGE_KEY);
+            if (!raw) return;
+            var selectedSet;
+            try {
+                selectedSet = new Set(JSON.parse(raw));
+            } catch (e) {
+                return;
+            }
+            document.querySelectorAll('input[name="selected"]').forEach(function (cb) {
+                cb.checked = selectedSet.has(cb.value);
+            });
+        }
+
+        function attachSelectedHandlers() {
+            document.querySelectorAll('input[name="selected"]').forEach(function (cb) {
+                cb.addEventListener('change', persistSelectedState);
+            });
+        }
+
+        function toggleAll(source) {
+            document.querySelectorAll('input[name="selected"]').forEach(cb => {
+                cb.checked = source.checked;
+            });
+            persistSelectedState();
+        }
+
+        restoreSelectedState();
+        attachSelectedHandlers();
+
+        /* Auto-save quantity changes */
+        document.querySelectorAll('.qty-input').forEach(function (input) {
+            input.addEventListener('change', function () {
+                var name = input.name;  // "qty_{uuid}"
+                var uuid = name.replace('qty_', '');
+                var payload = new URLSearchParams();
+                payload.append('uuid', uuid);
+                payload.append('labelQuantity', input.value);
+                fetch("{{ url_for('update_quantity') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: payload.toString()
+                });
+            });
+        });
+
+        /* Auto-save archived status changes */
+        document.querySelectorAll('.archived-checkbox').forEach(function (input) {
+            input.addEventListener('change', function () {
+                var payload = new URLSearchParams();
+                payload.append('uuid', input.dataset.uuid);
+                payload.append('archived', input.checked ? '1' : '0');
+                fetch("{{ url_for('update_archived') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: payload.toString()
+                }).then(function () {
+                    window.location.reload();
+                });
+            });
+        });
+    </script>
+    <script>
+        (function () {
+            var form = document.querySelector(".toolbar");
+            if (!form) return;
+            form.addEventListener("submit", function () {
+                var existing = form.querySelectorAll("input[name='selected']");
+                existing.forEach(function (n) { n.remove(); });
+                var selected = document.querySelectorAll("input[name='selected']:checked");
+                selected.forEach(function (cb) {
+                    var input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = "selected";
+                    input.value = cb.value;
+                    form.appendChild(input);
+                });
+            });
+        })();
+    </script>
+
+    <div id="dup-modal" class="modal-overlay" style="display:none">
+        <div class="modal">
+            <h3>Duplicate Collecting Event</h3>
+            <div id="dup-modal-info"></div>
+            <fieldset class="modal-fieldset">
+                <legend>Dates (editable)</legend>
+                <div class="modal-date-row">
+                    <label class="modal-field">Event Date
+                        <input type="text" id="dup-createdAt" placeholder="YYYY-MM-DD">
+                    </label>
+                    <label class="modal-field">Start Date
+                        <input type="text" id="dup-startDateTime" placeholder="YYYY-MM-DD">
+                    </label>
+                    <label class="modal-field">End Date
+                        <input type="text" id="dup-endDateTime" placeholder="YYYY-MM-DD">
+                    </label>
+                </div>
+            </fieldset>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-cancel" onclick="closeDupModal()">Cancel</button>
+                <button type="button" class="btn btn-generate" onclick="confirmDup()">Duplicate</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="delete-modal" class="modal-overlay" style="display:none">
+        <div class="modal">
+            <h3>Delete Collecting Event?</h3>
+            <div id="delete-modal-body"></div>
+            <p class="modal-warning">This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-cancel" onclick="closeDeleteModal()">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay" style="display:none">
+        <div class="modal">
+            <h3>Settings</h3>
+            <div class="settings-form">
+                <div class="settings-section-head">Display</div>
+                <div class="settings-row">
+                    <label class="settings-label">Date Format
+                        <select id="settings-dateFormat" class="settings-select">
+                            <option value="roman">Roman numeral (16.ii.2026)</option>
+                            <option value="iso">ISO / computer (2026-02-16)</option>
+                            <option value="dmy">Day Month Year (16 FEB 2026)</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-section-head">Label Printing</div>
+                <div class="settings-row">
+                    <label class="settings-label">Font
+                        <select id="settings-font" class="settings-select">
+                            <option value="LiberationSansNarrow">Liberation Sans Narrow</option>
+                            <option value="LiberationSans">Liberation Sans</option>
+                            <option value="LiberationSerif">Liberation Serif</option>
+                            <option value="LiberationMono">Liberation Mono</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Font Size (pt)
+                        <select id="settings-fontSize" class="settings-select">
+                            <option value="3">3</option>
+                            <option value="3.5">3.5</option>
+                            <option value="4">4</option>
+                            <option value="4.5">4.5</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Minimum Lines per Label
+                        <select id="settings-minLines" class="settings-select">
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Maximum Lines per Label
+                        <select id="settings-maxLines" class="settings-select">
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                            <option value="7">7</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Label Width (cm)
+                        <select id="settings-labelWidth" class="settings-select">
+                            <option value="1.5">1.5</option>
+                            <option value="1.6">1.6</option>
+                            <option value="1.76">1.76 (default)</option>
+                            <option value="1.9">1.9</option>
+                            <option value="2.0">2.0</option>
+                            <option value="2.2">2.2</option>
+                            <option value="2.5">2.5</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-checkbox-label">
+                        <input type="checkbox" id="settings-splitHostLabel" class="checkbox-lg">
+                        Split host onto a separate label
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-checkbox-label">
+                        <input type="checkbox" id="settings-allowDateDotBreak" class="checkbox-lg">
+                        Allow breaking dates at "." when label overflows
+                    </label>
+                </div>
+                <div class="settings-row">
+                    <label class="settings-checkbox-label">
+                        <input type="checkbox" id="settings-allowCoordDotBreak" class="checkbox-lg">
+                        Allow breaking coordinates at "." when label overflows
+                    </label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-cancel" onclick="closeSettingsModal()">Cancel</button>
+                <button type="button" class="btn btn-generate" onclick="saveSettings()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* Clickable rows → edit */
+        document.querySelectorAll('.clickable-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('input, button, a, .actions')) return;
+                window.location = row.dataset.href;
+            });
+        });
+
+        /* Duplicate modal */
+        var _pendingDupIdx = null;
+
+        function showDupModal(btn) {
+            _pendingDupIdx = btn.dataset.idx || null;
+            var fields = [
+                ['Event ID', btn.dataset.code],
+                ['Country', btn.dataset.country],
+                ['State', btn.dataset.state],
+                ['County', btn.dataset.county],
+                ['Locality', btn.dataset.locality],
+                ['Collectors', btn.dataset.collectors],
+                ['Technique', btn.dataset.technique]
+            ];
+            var html = '<dl class="modal-dl">';
+            for (var i = 0; i < fields.length; i++) {
+                if (fields[i][1]) {
+                    html += '<dt>' + fields[i][0] + '</dt><dd>' + escapeHtml(fields[i][1]) + '</dd>';
+                }
+            }
+            html += '</dl>';
+            document.getElementById('dup-modal-info').innerHTML = html;
+            document.getElementById('dup-createdAt').value = btn.dataset.created || '';
+            document.getElementById('dup-startDateTime').value = btn.dataset.start || '';
+            document.getElementById('dup-endDateTime').value = btn.dataset.end || '';
+            document.getElementById('dup-modal').style.display = 'flex';
+        }
+
+        function closeDupModal() {
+            document.getElementById('dup-modal').style.display = 'none';
+            _pendingDupIdx = null;
+        }
+
+        function confirmDup() {
+            if (!_pendingDupIdx) return;
+            var payload = new URLSearchParams();
+            payload.append('createdAt', document.getElementById('dup-createdAt').value || '');
+            payload.append('startDateTime', document.getElementById('dup-startDateTime').value || '');
+            payload.append('endDateTime', document.getElementById('dup-endDateTime').value || '');
+            fetch("{{ url_for('duplicate_event', idx=0) }}".replace("0", _pendingDupIdx), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: payload.toString()
+            }).then(function () {
+                window.location.reload();
+            });
+        }
+
+        document.getElementById('dup-modal').addEventListener('click', function (e) {
+            if (e.target === this) closeDupModal();
+        });
+
+        /* Delete confirmation modal */
+        var _pendingDeleteIdx = null;
+
+        function escapeHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function showDeleteModal(btn) {
+            _pendingDeleteIdx = btn.dataset.idx || null;
+            var fields = [
+                ['Event ID', btn.dataset.code],
+                ['Country', btn.dataset.country],
+                ['State', btn.dataset.state],
+                ['County', btn.dataset.county],
+                ['Locality', btn.dataset.locality],
+                ['Date', btn.dataset.date],
+                ['Collectors', btn.dataset.collectors],
+                ['Technique', btn.dataset.technique]
+            ];
+            var html = '<dl class="modal-dl">';
+            for (var i = 0; i < fields.length; i++) {
+                if (fields[i][1]) {
+                    html += '<dt>' + fields[i][0] + '</dt><dd>' + escapeHtml(fields[i][1]) + '</dd>';
+                }
+            }
+            html += '</dl>';
+            document.getElementById('delete-modal-body').innerHTML = html;
+            document.getElementById('delete-modal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').style.display = 'none';
+            _pendingDeleteIdx = null;
+        }
+
+        function confirmDelete() {
+            if (!_pendingDeleteIdx) return;
+            fetch("{{ url_for('delete_event', idx=0) }}".replace("0", _pendingDeleteIdx), {
+                method: 'POST'
+            }).then(function () {
+                window.location.reload();
+            });
+        }
+
+        /* Settings modal */
+        function openSettingsModal() {
+            fetch('/settings')
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    document.getElementById('settings-dateFormat').value = s.dateFormat || 'roman';
+                    document.getElementById('settings-font').value = s.font;
+                    document.getElementById('settings-fontSize').value = String(s.fontSize);
+                    document.getElementById('settings-minLines').value = String(s.minLines);
+                    document.getElementById('settings-maxLines').value = String(s.maxLines);
+                    document.getElementById('settings-labelWidth').value = String(s.labelWidth);
+                    document.getElementById('settings-splitHostLabel').checked = s.splitHostLabel;
+                    document.getElementById('settings-allowDateDotBreak').checked = s.allowDateDotBreak;
+                    document.getElementById('settings-allowCoordDotBreak').checked = s.allowCoordDotBreak;
+                    document.getElementById('settings-modal').style.display = 'flex';
+                });
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').style.display = 'none';
+        }
+
+        function saveSettings() {
+            var payload = {
+                dateFormat: document.getElementById('settings-dateFormat').value,
+                font: document.getElementById('settings-font').value,
+                fontSize: parseFloat(document.getElementById('settings-fontSize').value),
+                minLines: parseInt(document.getElementById('settings-minLines').value),
+                maxLines: parseInt(document.getElementById('settings-maxLines').value),
+                labelWidth: parseFloat(document.getElementById('settings-labelWidth').value),
+                splitHostLabel: document.getElementById('settings-splitHostLabel').checked,
+                allowDateDotBreak: document.getElementById('settings-allowDateDotBreak').checked,
+                allowCoordDotBreak: document.getElementById('settings-allowCoordDotBreak').checked
+            };
+            fetch('/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function() {
+                closeSettingsModal();
+                window.location.reload();
+            });
+        }
+
+        /* Close modal on overlay click or Escape */
+        document.getElementById('delete-modal').addEventListener('click', function (e) {
+            if (e.target === this) closeDeleteModal();
+        });
+        document.getElementById('settings-modal').addEventListener('click', function (e) {
+            if (e.target === this) closeSettingsModal();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { closeDupModal(); closeDeleteModal(); closeSettingsModal(); }
+        });
+
+        /* Remember phone IP */
+        (function () {
+            var ipInput = document.getElementById('phone-ip-input');
+            if (!ipInput) return;
+            var saved = localStorage.getItem('fieldcollect.phone_ip');
+            if (saved) ipInput.value = saved;
+            ipInput.closest('form').addEventListener('submit', function () {
+                localStorage.setItem('fieldcollect.phone_ip', ipInput.value);
+            });
+        })();
+    </script>
+</body>
+</html>

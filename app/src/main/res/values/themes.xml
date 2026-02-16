@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FieldCollect" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/fc_primary</item>
+        <item name="colorOnPrimary">@color/fc_on_primary</item>
+        <item name="colorPrimaryContainer">@color/fc_primary_container</item>
+        <item name="colorSecondary">@color/fc_secondary</item>
+    </style>
+
+    <!-- Large field-friendly button style -->
+    <style name="Widget.FieldCollect.Button" parent="Widget.Material3.Button">
+        <item name="android:minHeight">64dp</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingEnd">24dp</item>
+    </style>
+
+    <style name="Widget.FieldCollect.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">56dp</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+</resources>

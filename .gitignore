@@ -1,0 +1,30 @@
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets & credentials
+client_secret_*.json
+token.json
+
+# App data (user events & photos)
+label_printer/data/
+label_printer/print_settings.json
+
+# Misc
+*.png
+*.pdf
+.claude/
