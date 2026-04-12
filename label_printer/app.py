@@ -2,6 +2,7 @@ import glob
 import os
 import re
 import tempfile
+import threading
 import uuid
 import json
 from datetime import datetime, date
@@ -57,7 +58,7 @@ def _parse_datetime(value):
 
 def _normalize_decimal_coord(value):
     """Normalize coordinate formatting for consistent storage."""
-    return f"{value:.6f}".rstrip("0").rstrip(".")
+    return f"{value:.6f}"
 
 
 def _parse_number_component(raw):
@@ -141,12 +142,33 @@ def _parse_decimal_coordinate(raw, is_lat):
         return None
     return value
 
+def _safe_int(s):
+    """Parse string to int, return None on failure."""
+    if not s or not s.strip():
+        return None
+    try:
+        return int(s.strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_float(s):
+    """Parse string to float, return None on failure."""
+    if not s or not s.strip():
+        return None
+    try:
+        return float(s.strip())
+    except (ValueError, TypeError):
+        return None
+
+
 import local_store
 from label_formatter import format_event, format_event_labels, _format_date, _format_date_range
 from pdf_generator import generate_pdf
-from print_settings import load_settings, save_settings, FONT_CHOICES, FONT_SIZE_CHOICES, MIN_LINES_CHOICES, MAX_LINES_CHOICES, DATE_FORMAT_CHOICES
+from print_settings import load_settings, save_settings, FONT_CHOICES, FONT_SIZE_CHOICES, MIN_LINES_CHOICES, MAX_LINES_CHOICES, LABEL_WIDTH_CHOICES, DATE_FORMAT_CHOICES
 
 app = Flask(__name__)
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = os.urandom(24)
 
 
@@ -307,6 +329,7 @@ def _collect_suggestions():
     counties = set()
     localities = set()
     hosts = set()
+    dates = set()
     for event in _cached_events or []:
         technique = event.get("collectionTechnique")
         if technique:
@@ -329,14 +352,48 @@ def _collect_suggestions():
         host = event.get("host")
         if host:
             hosts.add(host)
+        for dkey in ("createdAt", "startDateTime", "endDateTime"):
+            dval = event.get(dkey)
+            if dval and len(dval) >= 10:
+                dates.add(dval[:10])
+    # Build geo profiles: unique combos of country/state/county/locality
+    geo_seen = set()
+    geo_profiles = []
+    for event in _cached_events or []:
+        country = event.get("country") or ""
+        state = event.get("stateProvince") or ""
+        county = event.get("county") or ""
+        locality = event.get("locality") or ""
+        if not any([country, state, county, locality]):
+            continue
+        key = (country, state, county, locality)
+        if key not in geo_seen:
+            geo_seen.add(key)
+            geo_profiles.append({
+                "country": country,
+                "state": state,
+                "county": county,
+                "locality": locality,
+            })
+
+    # Build collector groups: full comma-separated collector strings
+    collector_groups = set()
+    for event in _cached_events or []:
+        coll_list = event.get("collectors") or []
+        if len(coll_list) > 1:
+            collector_groups.add(", ".join(coll_list))
+
     return {
         "techniques": sorted(techniques),
         "collectors": sorted(collectors),
+        "collector_groups": sorted(collector_groups),
         "countries": sorted(countries),
         "states": sorted(states),
         "counties": sorted(counties),
         "localities": sorted(localities),
         "hosts": sorted(hosts),
+        "dates": sorted(dates, reverse=True),
+        "geo_profiles": geo_profiles,
     }
 
 
@@ -482,11 +539,14 @@ def new_event():
         photos=[],
         technique_options=suggestions["techniques"],
         collector_options=suggestions["collectors"],
+        collector_group_options=suggestions["collector_groups"],
         country_options=suggestions["countries"],
         state_options=suggestions["states"],
         county_options=suggestions["counties"],
         locality_options=suggestions["localities"],
         host_options=suggestions["hosts"],
+        date_options=suggestions["dates"],
+        geo_profiles=suggestions["geo_profiles"],
     )
 
 
@@ -508,11 +568,14 @@ def edit_event(idx):
         photos=photos,
         technique_options=suggestions["techniques"],
         collector_options=suggestions["collectors"],
+        collector_group_options=suggestions["collector_groups"],
         country_options=suggestions["countries"],
         state_options=suggestions["states"],
         county_options=suggestions["counties"],
         locality_options=suggestions["localities"],
         host_options=suggestions["hosts"],
+        date_options=suggestions["dates"],
+        geo_profiles=suggestions["geo_profiles"],
     )
 
 
@@ -663,8 +726,8 @@ def save_event():
         "collectionCode": request.form.get("collectionCode", ""),
         "latitude": lat_str if lat_str else None,
         "longitude": lon_str if lon_str else None,
-        "elevation": int(elev_str) if elev_str else None,
-        "gpsAccuracy": float(accuracy_str) if accuracy_str else None,
+        "elevation": _safe_int(elev_str),
+        "gpsAccuracy": _safe_float(accuracy_str),
         "createdAt": created_at,
         "country": request.form.get("country", ""),
         "stateProvince": request.form.get("stateProvince", ""),
@@ -676,7 +739,7 @@ def save_event():
         "startDateTime": start_dt,
         "endDateTime": end_dt,
         "collectors": collectors,
-        "labelQuantity": int(qty_str) if qty_str else 10,
+        "labelQuantity": _safe_int(qty_str) or 10,
         "modifiedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
         "photos": [],
     }
@@ -738,9 +801,9 @@ def duplicate_event(idx):
                 created_at = start_dt or end_dt
             if created_at:
                 new_event["createdAt"] = created_at
-            if start_raw or "startDateTime" in request.form:
+            if start_raw:
                 new_event["startDateTime"] = start_dt
-            if end_raw or "endDateTime" in request.form:
+            if end_raw:
                 new_event["endDateTime"] = end_dt
         _cached_events.append(new_event)
         _save_events()
@@ -757,7 +820,10 @@ def update_quantity():
     qty_str = request.form.get("labelQuantity", "").strip()
     if not event_uuid or not qty_str:
         return "", 400
-    qty = max(1, min(1000, int(qty_str)))
+    try:
+        qty = max(1, min(1000, int(qty_str)))
+    except (ValueError, TypeError):
+        return "", 400
     for event in (_cached_events or []):
         if event.get("uuid") == event_uuid:
             event["labelQuantity"] = qty
@@ -847,10 +913,19 @@ def update_settings():
                 current["maxLines"] = ml
         except (ValueError, TypeError):
             pass
+    if "labelWidth" in data:
+        try:
+            lw = float(data["labelWidth"])
+            if lw in LABEL_WIDTH_CHOICES:
+                current["labelWidth"] = lw
+        except (ValueError, TypeError):
+            pass
     if "allowDateDotBreak" in data:
         current["allowDateDotBreak"] = bool(data["allowDateDotBreak"])
     if "allowCoordDotBreak" in data:
         current["allowCoordDotBreak"] = bool(data["allowCoordDotBreak"])
+    if "splitHostLabel" in data:
+        current["splitHostLabel"] = bool(data["splitHostLabel"])
     if "dateFormat" in data and data["dateFormat"] in DATE_FORMAT_CHOICES:
         current["dateFormat"] = data["dateFormat"]
     save_settings(current)
@@ -992,6 +1067,35 @@ def sync_phone():
         parts.append("Everything up to date")
     flash("Sync complete: " + ", ".join(parts), "success")
     return redirect(url_for("index"))
+
+
+_shutdown_timer = None
+_shutdown_lock = threading.Lock()
+
+
+@app.before_request
+def _cancel_shutdown():
+    """Any incoming request means the user is still using the app — cancel pending shutdown."""
+    global _shutdown_timer
+    with _shutdown_lock:
+        if _shutdown_timer is not None:
+            _shutdown_timer.cancel()
+            _shutdown_timer = None
+
+
+@app.route("/bye", methods=["POST"])
+def bye():
+    """Browser sends this when the tab is closed or navigated away.
+    Start a short grace period; if a new request arrives it's just navigation and we cancel.
+    If nothing arrives, the tab is really closed and we exit."""
+    global _shutdown_timer
+    with _shutdown_lock:
+        if _shutdown_timer is not None:
+            _shutdown_timer.cancel()
+        _shutdown_timer = threading.Timer(5.0, lambda: os._exit(0))
+        _shutdown_timer.daemon = True
+        _shutdown_timer.start()
+    return "", 204
 
 
 if __name__ == "__main__":

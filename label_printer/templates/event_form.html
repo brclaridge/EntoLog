@@ -162,17 +162,20 @@
                 <label>Event Date
                     <input type="text" name="createdAt" class="date-auto"
                            value="{{ event.createdAt[:10] if event and event.createdAt else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}">
+                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           data-list="date-options" autocomplete="off">
                 </label>
                 <label>Start Date
                     <input type="text" name="startDateTime" class="date-auto"
                            value="{{ event.startDateTime[:10] if event and event.startDateTime else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}">
+                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           data-list="date-options" autocomplete="off">
                 </label>
                 <label>End Date
                     <input type="text" name="endDateTime" class="date-auto"
                            value="{{ event.endDateTime[:10] if event and event.endDateTime else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}">
+                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           data-list="date-options" autocomplete="off">
                 </label>
             </div>
             <div class="form-row">
@@ -276,6 +279,11 @@
         <option value="{{ option }}"></option>
         {% endfor %}
     </datalist>
+    <datalist id="collector-group-options">
+        {% for option in collector_group_options or [] %}
+        <option value="{{ option }}"></option>
+        {% endfor %}
+    </datalist>
     <datalist id="country-options">
         {% for option in country_options or [] %}
         <option value="{{ option }}"></option>
@@ -293,6 +301,11 @@
     </datalist>
     <datalist id="locality-options">
         {% for option in locality_options or [] %}
+        <option value="{{ option }}"></option>
+        {% endfor %}
+    </datalist>
+    <datalist id="date-options">
+        {% for option in date_options or [] %}
         <option value="{{ option }}"></option>
         {% endfor %}
     </datalist>
@@ -480,26 +493,138 @@
         })();
     </script>
     <script>
+        /* ── Cross-field autocomplete with geo profiles ── */
         (function () {
+            var GEO_PROFILES = {{ geo_profiles | tojson }};
+
+            var form = document.querySelector("form.event-form");
+            if (!form) return;
+
+            var geoFields = {
+                country:  form.querySelector("input[name='country']"),
+                state:    form.querySelector("input[name='stateProvince']"),
+                county:   form.querySelector("input[name='county']"),
+                locality: form.querySelector("input[name='locality']")
+            };
+
+            var collectorsInput = form.querySelector("input[name='collectors']");
+
+            /* ── Helpers ── */
+            function getDatalistOptions(input) {
+                var listId = input.getAttribute("data-list");
+                if (!listId) return [];
+                var list = document.getElementById(listId);
+                if (!list) return [];
+                return Array.from(list.options).map(function (o) { return o.value; });
+            }
+
             function findCompletion(val, options) {
                 if (!val) return null;
                 var lower = val.toLowerCase();
                 for (var i = 0; i < options.length; i++) {
-                    var opt = options[i].value || "";
-                    if (opt.toLowerCase().indexOf(lower) === 0 && opt.length > val.length) {
-                        return opt;
+                    if (options[i].toLowerCase().indexOf(lower) === 0 && options[i].length > val.length) {
+                        return options[i];
                     }
                 }
                 return null;
             }
 
-            function getOptions(input) {
-                var listId = input.getAttribute("data-list");
-                if (!listId) return [];
-                var list = document.getElementById(listId);
-                return list ? list.options : [];
+            /* Filter geo profiles by what's already filled in other geo fields */
+            function matchingProfiles(excludeField) {
+                return GEO_PROFILES.filter(function (p) {
+                    for (var key in geoFields) {
+                        if (key === excludeField) continue;
+                        var inp = geoFields[key];
+                        if (!inp) continue;
+                        var v = inp.value.trim();
+                        if (v && p[key] && p[key].toLowerCase() !== v.toLowerCase()) return false;
+                        if (v && !p[key]) return false;
+                    }
+                    return true;
+                });
             }
 
+            /* Get filtered suggestions for a geo field based on sibling values */
+            function geoSuggestions(fieldName) {
+                var profiles = matchingProfiles(fieldName);
+                var seen = {};
+                var result = [];
+                profiles.forEach(function (p) {
+                    var val = p[fieldName];
+                    if (val && !seen[val.toLowerCase()]) {
+                        seen[val.toLowerCase()] = true;
+                        result.push(val);
+                    }
+                });
+                return result.sort();
+            }
+
+            /* Auto-fill empty sibling geo fields from the best matching profile */
+            function autoFillGeo(sourceField, acceptedValue) {
+                var matches = GEO_PROFILES.filter(function (p) {
+                    return p[sourceField] && p[sourceField].toLowerCase() === acceptedValue.toLowerCase();
+                });
+                /* Further narrow by already-filled fields */
+                for (var key in geoFields) {
+                    if (key === sourceField) continue;
+                    var v = (geoFields[key] || {}).value;
+                    if (v && v.trim()) {
+                        var vLower = v.trim().toLowerCase();
+                        var narrowed = matches.filter(function (p) {
+                            return p[key] && p[key].toLowerCase() === vLower;
+                        });
+                        if (narrowed.length > 0) matches = narrowed;
+                    }
+                }
+                if (matches.length === 0) return;
+                /* If all matches agree on a field value, fill it */
+                for (var key in geoFields) {
+                    if (key === sourceField) continue;
+                    var inp = geoFields[key];
+                    if (!inp || inp.value.trim()) continue; /* don't overwrite */
+                    var vals = {};
+                    matches.forEach(function (p) {
+                        if (p[key]) vals[p[key]] = true;
+                    });
+                    var unique = Object.keys(vals);
+                    if (unique.length === 1) {
+                        inp.value = unique[0];
+                        /* Trigger ghost update */
+                        inp.dispatchEvent(new Event("input"));
+                    }
+                }
+            }
+
+            /* ── Collector completion: support completing individual names after comma ── */
+            function collectorCompletion(input) {
+                var full = input.value;
+                var lastComma = full.lastIndexOf(",");
+                var prefix, before;
+                if (lastComma >= 0) {
+                    before = full.substring(0, lastComma + 1) + " ";
+                    prefix = full.substring(lastComma + 1).trimStart();
+                } else {
+                    before = "";
+                    prefix = full;
+                }
+                if (!prefix) return null;
+
+                /* First try matching the full string against collector groups */
+                var groupOptions = getDatalistOptions(input).concat(
+                    Array.from((document.getElementById("collector-group-options") || {}).options || []).map(function(o) { return o.value; })
+                );
+                var fullMatch = findCompletion(full, groupOptions);
+                if (fullMatch) return fullMatch;
+
+                /* Then try individual name completion after the last comma */
+                var nameOptions = getDatalistOptions(input);
+                var nameMatch = findCompletion(prefix, nameOptions);
+                if (nameMatch) return before + nameMatch;
+
+                return null;
+            }
+
+            /* ── Set up ghost autocomplete on each input[data-list] ── */
             document.querySelectorAll("input[data-list]").forEach(function (input) {
                 var wrap = document.createElement("div");
                 wrap.className = "ac-wrap";
@@ -510,27 +635,60 @@
                 wrap.appendChild(ghost);
                 wrap.appendChild(input);
 
+                var fieldName = input.getAttribute("name");
+                var isGeoField = fieldName in geoFields;
+                var isCollectors = (input === collectorsInput);
+
                 function updateGhost() {
                     var val = input.value;
-                    var match = findCompletion(val, getOptions(input));
+                    var match;
+                    if (isCollectors) {
+                        match = collectorCompletion(input);
+                    } else if (isGeoField) {
+                        match = findCompletion(val, geoSuggestions(fieldName));
+                    } else {
+                        match = findCompletion(val, getDatalistOptions(input));
+                    }
                     ghost.textContent = match || "";
                 }
 
-                input.addEventListener("input", updateGhost);
-                input.addEventListener("focus", updateGhost);
+                /* Use setTimeout so the ghost sees values after other input handlers
+                   (e.g. date auto-dash formatting) have finished modifying the field. */
+                input.addEventListener("input", function () { setTimeout(updateGhost, 0); });
+                input.addEventListener("focus", function () { setTimeout(updateGhost, 0); });
                 input.addEventListener("blur", function () { ghost.textContent = ""; });
 
                 input.addEventListener("keydown", function (e) {
-                    var completion = ghost.textContent;
-                    if (!completion) return;
-
-                    if (e.key === "ArrowRight" && input.selectionStart === input.value.length) {
+                    if (e.key === "Tab" && ghost.textContent) {
                         e.preventDefault();
-                        input.value = completion;
+                        input.value = ghost.textContent;
                         ghost.textContent = "";
+                        if (isGeoField) autoFillGeo(fieldName, input.value.trim());
+                        return;
+                    }
+                    if (e.key === "ArrowRight" && input.selectionStart === input.value.length && ghost.textContent) {
+                        e.preventDefault();
+                        input.value = ghost.textContent;
+                        ghost.textContent = "";
+                        if (isGeoField) autoFillGeo(fieldName, input.value.trim());
                     }
                 });
             });
+
+            /* When any geo field changes, refresh ghosts on sibling geo fields */
+            for (var key in geoFields) {
+                (function (k) {
+                    var inp = geoFields[k];
+                    if (!inp) return;
+                    inp.addEventListener("change", function () {
+                        for (var other in geoFields) {
+                            if (other !== k && geoFields[other]) {
+                                geoFields[other].dispatchEvent(new Event("input"));
+                            }
+                        }
+                    });
+                })(key);
+            }
         })();
     </script>
     <script>
@@ -746,6 +904,25 @@
                 if (latVal !== null && latInput) latInput.value = formatDecimal(latVal);
                 if (lonVal !== null && lonInput) lonInput.value = formatDecimal(lonVal);
             });
+
+            /* When the user edits the decimal fields directly, clear the DMS/DDM
+               alternative fields so they don't override the typed value on submit. */
+            function clearLatAlt() {
+                ['lat_dms_deg','lat_dms_min','lat_dms_sec','lat_dms_dir',
+                 'lat_dm_deg','lat_dm_min','lat_dm_dir'].forEach(function(n) {
+                    var el = form.querySelector('[name="' + n + '"]');
+                    if (el) el.value = '';
+                });
+            }
+            function clearLonAlt() {
+                ['lon_dms_deg','lon_dms_min','lon_dms_sec','lon_dms_dir',
+                 'lon_dm_deg','lon_dm_min','lon_dm_dir'].forEach(function(n) {
+                    var el = form.querySelector('[name="' + n + '"]');
+                    if (el) el.value = '';
+                });
+            }
+            if (latInput) latInput.addEventListener('input', clearLatAlt);
+            if (lonInput) lonInput.addEventListener('input', clearLonAlt);
         })();
     </script>
     <script>
@@ -813,7 +990,7 @@
         /* ── Date auto-dash formatting ── */
         (function () {
             document.querySelectorAll(".date-auto").forEach(function (input) {
-                input.addEventListener("input", function () {
+                input.addEventListener("input", function (e) {
                     var digits = input.value.replace(/\D/g, "");
                     var formatted = "";
                     for (var i = 0; i < digits.length && i < 8; i++) {
@@ -824,6 +1001,23 @@
                         input.value = formatted;
                     }
                 });
+            });
+        })();
+    </script>
+    <script>
+        /* Signal the server when this tab is truly closed. */
+        (function () {
+            if (!window._navigating) window._navigating = false;
+            document.querySelectorAll('form').forEach(function (f) {
+                f.addEventListener('submit', function () { window._navigating = true; });
+            });
+            document.querySelectorAll('a').forEach(function (a) {
+                a.addEventListener('click', function () { window._navigating = true; });
+            });
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'hidden' && !window._navigating) {
+                    navigator.sendBeacon("{{ url_for('bye') }}", '');
+                }
             });
         })();
     </script>

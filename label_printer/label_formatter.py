@@ -244,7 +244,7 @@ def format_event(event, settings=None):
         max_lines = MAX_LINES
         allow_dot_break = True
         label_width_cm = 1.76
-    label_width = label_width_cm * 28.3465  # cm to points
+    label_width = label_width_cm * 28.3465 * 1.05  # cm to points, +5% width
 
     coord_decimals = event.get("coordPrecision")
     parts = []
@@ -256,7 +256,10 @@ def format_event(event, settings=None):
 
     geo_parts = []
     if country:
-        geo_parts.append(f"USA; {state}" if country.upper() in ("US", "USA", "UNITED STATES") else country)
+        if country.upper() in ("US", "USA", "UNITED STATES"):
+            geo_parts.append(f"USA; {state}" if state else "USA")
+        else:
+            geo_parts.append(f"{country}; {state}" if state else country)
     elif state:
         geo_parts.append(state)
     if county:
@@ -283,17 +286,22 @@ def format_event(event, settings=None):
     coord_idx = None
     if lat is not None and lon is not None:
         try:
-            def trim_zeros(s):
+            def _decimal_places(s):
                 if "." in s:
-                    s = s.rstrip("0").rstrip(".")
-                return s
+                    return len(s) - s.index(".") - 1
+                return 0
 
             if isinstance(coord_decimals, int):
-                lat_s = trim_zeros(f"{float(lat):.{coord_decimals}f}")
-                lon_s = trim_zeros(f"{float(lon):.{coord_decimals}f}")
+                lat_s = f"{float(lat):.{coord_decimals}f}"
+                lon_s = f"{float(lon):.{coord_decimals}f}"
             else:
-                lat_s = trim_zeros(str(lat).strip())
-                lon_s = trim_zeros(str(lon).strip())
+                lat_s = str(lat).strip()
+                lon_s = str(lon).strip()
+            # Match decimal places to the longer of the two
+            max_dp = max(_decimal_places(lat_s), _decimal_places(lon_s))
+            if max_dp > 0:
+                lat_s = f"{float(lat_s):.{max_dp}f}"
+                lon_s = f"{float(lon_s):.{max_dp}f}"
             coord_str = f"{lat_s} {lon_s}"
             coord_idx = len(parts)
             parts.append(coord_str)
@@ -379,7 +387,7 @@ def format_event_labels(event, qty, settings=None):
         min_lines = settings.get("minLines", MIN_LINES) if settings else MIN_LINES
         max_lines = settings.get("maxLines", MAX_LINES) if settings else MAX_LINES
         label_width_cm = settings.get("labelWidth", 1.76) if settings else 1.76
-        label_width = label_width_cm * 28.3465
+        label_width = label_width_cm * 28.3465 * 1.05  # +5% width
         _ensure_font_registered(font_name)
 
         host_lines = _wrap_text(host, label_width, max_lines=max_lines,
