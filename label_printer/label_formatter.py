@@ -57,6 +57,45 @@ def _abbreviate_name(full_name):
     return parts[0][0].upper() + " " + " ".join(parts[1:])
 
 
+# Full state/province name -> postal abbreviation. Mirrors the mapping used by
+# the Android app's reverseGeocode so desktop and phone produce identical values.
+_STATE_ABBREVIATIONS = {
+    # US states
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+    "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+    "wisconsin": "WI", "wyoming": "WY",
+    # US federal district and territories
+    "district of columbia": "DC", "puerto rico": "PR", "guam": "GU",
+    "american samoa": "AS", "u.s. virgin islands": "VI",
+    "united states virgin islands": "VI", "northern mariana islands": "MP",
+    # Canadian provinces and territories
+    "alberta": "AB", "british columbia": "BC", "manitoba": "MB",
+    "new brunswick": "NB", "newfoundland and labrador": "NL",
+    "northwest territories": "NT", "nova scotia": "NS", "nunavut": "NU",
+    "ontario": "ON", "prince edward island": "PE", "quebec": "QC",
+    "québec": "QC", "saskatchewan": "SK", "yukon": "YT",
+}
+
+
+def abbreviate_state(name):
+    """'California' -> 'CA'. Case-insensitive; names not in the map (e.g.
+    international regions, or values already abbreviated) are returned as-is."""
+    if not name:
+        return name
+    trimmed = name.strip()
+    return _STATE_ABBREVIATIONS.get(trimmed.lower(), trimmed)
+
+
 _ROMAN_MONTHS = {
     1: "i",
     2: "ii",
@@ -202,23 +241,53 @@ def _do_wrap(text, max_width, break_pattern,
     return lines
 
 
-def _wrap_text(text, max_width, max_lines=MAX_LINES,
-               font_name=FONT_NAME, font_size=FONT_SIZE,
-               allow_dot_break=True):
-    """Width-aware wrapping: break at spaces first, allow dot-breaks if over max_lines.
+def _pack_fields(parts, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
+                 allow_dot_break=True, force_break_before=None):
+    """Greedily pack fields onto lines, joined with "; ".
 
-    max_lines is a soft target — if space-only wrapping exceeds it and
-    dot-breaking is allowed, retry with dot-breaks to try to compress.
-    Content is never truncated.
+    A field is never split across lines. The only exception is a field that is
+    physically wider than the label on its own — that must wrap within itself,
+    since there is no other way to fit it.
+
+    ``force_break_before`` is an index into ``parts`` at which to start a new
+    line even if the field would otherwise fit on the current one. It is used to
+    push the locality onto its own line after the geographic header.
     """
-    # Try breaking at spaces only
-    lines = _do_wrap(text, max_width, r" ", font_name, font_size)
+    break_pattern = r"[. ]" if allow_dot_break else r" "
+    lines = []
+    current = ""
 
-    # If over the soft target and dot-breaking is allowed, retry with dot-breaks
-    if len(lines) > max_lines and allow_dot_break:
-        lines = _do_wrap(text, max_width, r"[. ]", font_name, font_size)
+    for i, raw in enumerate(parts):
+        part = (raw or "").strip()
+        if not part:
+            continue
 
-    # Clean up trailing semicolons and whitespace on all lines
+        forced = force_break_before is not None and i == force_break_before
+        candidate = part if not current else current + "; " + part
+
+        # Flush the current line if this field is forced onto a new line or it
+        # simply won't fit alongside what's already there.
+        if current and (forced or
+                        _text_width(candidate, font_name, font_size) > max_width):
+            lines.append(current)
+            current = ""
+
+        if not current:
+            # Start a fresh line with this field. If the field alone is wider
+            # than the label, wrap it within itself (the unavoidable split).
+            if _text_width(part, font_name, font_size) <= max_width:
+                current = part
+            else:
+                sub = _do_wrap(part, max_width, break_pattern, font_name, font_size)
+                lines.extend(sub[:-1])
+                current = sub[-1] if sub else ""
+        else:
+            current = candidate
+
+    if current:
+        lines.append(current)
+
+    # Clean up trailing separators and whitespace on all lines
     lines = [line.rstrip().rstrip(";").rstrip() for line in lines]
 
     return lines
@@ -246,7 +315,14 @@ def format_event(event, settings=None):
         label_width_cm = 1.76
     label_width = label_width_cm * 28.3465 * 1.05  # cm to points, +5% width
 
+    # coordPrecision may be stored as a string (e.g. from form/JSON); coerce to
+    # an int so the precision override actually applies. None / blank / invalid
+    # falls back to the coordinate's own stored precision.
     coord_decimals = event.get("coordPrecision")
+    try:
+        coord_decimals = int(float(coord_decimals))
+    except (ValueError, TypeError):
+        coord_decimals = None
     parts = []
 
     # Country; State; County — use county value as-is for international flexibility
@@ -266,9 +342,11 @@ def format_event(event, settings=None):
         geo_parts.append(county)
     parts.extend(geo_parts)
 
-    # Locality
+    # Locality — remember its position so it can be pushed onto its own line.
     locality = event.get("locality", "")
+    locality_idx = None
     if locality:
+        locality_idx = len(parts)
         parts.append(locality)
 
     # Elevation
@@ -282,28 +360,22 @@ def format_event(event, settings=None):
     # Lat/Lon
     lat = event.get("latitude")
     lon = event.get("longitude")
-    coord_str = None
-    coord_idx = None
     if lat is not None and lon is not None:
         try:
-            def _decimal_places(s):
-                if "." in s:
-                    return len(s) - s.index(".") - 1
-                return 0
+            def _coord_text(v):
+                # Show exactly what is stored in the field. coordPrecision only
+                # caps the number of decimals (trims excess) — it never pads,
+                # so the label always reflects the field's actual precision.
+                s = str(v).strip()
+                if isinstance(coord_decimals, int):
+                    actual = len(s.split(".", 1)[1]) if "." in s else 0
+                    if actual > coord_decimals:
+                        s = f"{float(v):.{coord_decimals}f}"
+                return s
 
-            if isinstance(coord_decimals, int):
-                lat_s = f"{float(lat):.{coord_decimals}f}"
-                lon_s = f"{float(lon):.{coord_decimals}f}"
-            else:
-                lat_s = str(lat).strip()
-                lon_s = str(lon).strip()
-            # Match decimal places to the longer of the two
-            max_dp = max(_decimal_places(lat_s), _decimal_places(lon_s))
-            if max_dp > 0:
-                lat_s = f"{float(lat_s):.{max_dp}f}"
-                lon_s = f"{float(lon_s):.{max_dp}f}"
+            lat_s = _coord_text(lat)
+            lon_s = _coord_text(lon)
             coord_str = f"{lat_s} {lon_s}"
-            coord_idx = len(parts)
             parts.append(coord_str)
         except (ValueError, TypeError):
             pass
@@ -337,28 +409,23 @@ def format_event(event, settings=None):
     if host and not exclude_host:
         parts.append(host)
 
-    # Join all parts with "; "
-    text = "; ".join(parts)
+    pack_args = dict(font_name=font_name, font_size=font_size,
+                     allow_dot_break=allow_dot_break)
 
-    wrap_args = dict(max_lines=max_lines, font_name=font_name,
-                     font_size=font_size, allow_dot_break=allow_dot_break)
+    # Compact greedy packing (fields never split across lines).
+    greedy_lines = _pack_fields(parts, label_width, **pack_args)
 
-    lines = _wrap_text(text, label_width, **wrap_args)
-
-    # If under min_lines and coords exist, put coords on their own line
-    if len(lines) < min_lines and coord_str is not None:
-        pre_parts = parts[:coord_idx]
-        post_parts = parts[coord_idx + 1:]
-
-        new_lines = []
-        if pre_parts:
-            new_lines.extend(_wrap_text("; ".join(pre_parts), label_width, **wrap_args))
-        new_lines.extend(_wrap_text(coord_str, label_width, **wrap_args))
-        if post_parts:
-            new_lines.extend(_wrap_text("; ".join(post_parts), label_width, **wrap_args))
-
-        if len(new_lines) <= max_lines:
-            lines = new_lines
+    # Rule: put the locality on its own line (line 2, right after the geographic
+    # header) — but only when a header actually precedes it and the forced break
+    # keeps the label within max_lines. If honouring it would spill onto an
+    # extra line, fall back to the compact greedy layout. Field integrity is
+    # independent of this: _pack_fields never splits a field either way.
+    if locality_idx is not None and locality_idx > 0:
+        forced_lines = _pack_fields(parts, label_width,
+                                    force_break_before=locality_idx, **pack_args)
+        lines = forced_lines if len(forced_lines) <= max_lines else greedy_lines
+    else:
+        lines = greedy_lines
 
     # Keep a minimum physical label height for easier cutting/handling.
     while len(lines) < min_lines:
@@ -390,8 +457,8 @@ def format_event_labels(event, qty, settings=None):
         label_width = label_width_cm * 28.3465 * 1.05  # +5% width
         _ensure_font_registered(font_name)
 
-        host_lines = _wrap_text(host, label_width, max_lines=max_lines,
-                                font_name=font_name, font_size=font_size)
+        host_lines = _pack_fields([host], label_width,
+                                  font_name=font_name, font_size=font_size)
         while len(host_lines) < min_lines:
             host_lines.append("")
 

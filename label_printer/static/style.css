@@ -1022,3 +1022,25 @@ textarea:focus {
 .sortable-chosen {
     background: #1e3040 !important;
 }
+
+/* ── Page estimate display ── */
+.page-estimate {
+    display: inline-block;
+    margin-left: 12px;
+    padding: 6px 10px;
+    background: #2a3f57;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #9bb5d5;
+    min-width: 120px;
+    text-align: center;
+}
+
+.page-estimate .page-item {
+    display: inline-block;
+    margin: 2px;
+    padding: 2px 6px;
+    background: #3a557a;
+    border-radius: 3px;
+    font-size: 12px;
+}

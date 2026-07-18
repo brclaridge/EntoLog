@@ -659,13 +659,8 @@
                 input.addEventListener("blur", function () { ghost.textContent = ""; });
 
                 input.addEventListener("keydown", function (e) {
-                    if (e.key === "Tab" && ghost.textContent) {
-                        e.preventDefault();
-                        input.value = ghost.textContent;
-                        ghost.textContent = "";
-                        if (isGeoField) autoFillGeo(fieldName, input.value.trim());
-                        return;
-                    }
+                    /* Tab intentionally does NOT accept the completion — it just
+                       moves to the next field. Use ArrowRight to accept. */
                     if (e.key === "ArrowRight" && input.selectionStart === input.value.length && ghost.textContent) {
                         e.preventDefault();
                         input.value = ghost.textContent;
@@ -704,7 +699,11 @@
                     alert("Enter latitude and longitude first.");
                     return;
                 }
-                var url = "https://earth.google.com/web/search/" + encodeURIComponent(lat + "," + lon);
+                // Keep the comma literal — encoding it to %2C breaks Google
+                // Earth's coordinate search (the static label links use a raw
+                // comma too).
+                var url = "https://earth.google.com/web/search/" +
+                    encodeURIComponent(lat) + "," + encodeURIComponent(lon);
                 window.open(url, "_blank");
             });
         })();
@@ -729,7 +728,9 @@
             }
 
             function formatDecimal(value) {
-                return String(Number(value.toFixed(6)));
+                // Used only for DMS/DDM conversions. Cap at 5 decimals (~1 m).
+                // Never strip trailing zeros — pad to a fixed 5 places.
+                return value.toFixed(5);
             }
 
             function hasAny(values) {
@@ -767,95 +768,14 @@
                 return value;
             }
 
-            function ddToDms(value, isLat) {
-                if (value === null || value === undefined) return null;
-                var abs = Math.abs(value);
-                var deg = Math.floor(abs);
-                var minFloat = (abs - deg) * 60;
-                var min = Math.floor(minFloat);
-                var sec = (minFloat - min) * 60;
-                var dir = isLat ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
-                return { deg: deg, min: min, sec: Number(sec.toFixed(3)), dir: dir };
-            }
-
-            function ddToDm(value, isLat) {
-                if (value === null || value === undefined) return null;
-                var abs = Math.abs(value);
-                var deg = Math.floor(abs);
-                var min = (abs - deg) * 60;
-                var dir = isLat ? (value < 0 ? "S" : "N") : (value < 0 ? "W" : "E");
-                return { deg: deg, min: Number(min.toFixed(5)), dir: dir };
-            }
-
             var form = document.querySelector("form.event-form");
             if (!form) return;
 
             var latInput = form.querySelector("input[name='latitude']");
             var lonInput = form.querySelector("input[name='longitude']");
 
-            // Show equivalent DMS/DDM for saved decimal coordinates when fields are empty.
-            var initialLat = toFloat(latInput && latInput.value);
-            var initialLon = toFloat(lonInput && lonInput.value);
-            if (initialLat !== null) {
-                var latDmsHas = hasAny([
-                    (form.querySelector("input[name='lat_dms_deg']") || {}).value,
-                    (form.querySelector("input[name='lat_dms_min']") || {}).value,
-                    (form.querySelector("input[name='lat_dms_sec']") || {}).value,
-                    (form.querySelector("select[name='lat_dms_dir']") || {}).value
-                ]);
-                var latDmHas = hasAny([
-                    (form.querySelector("input[name='lat_dm_deg']") || {}).value,
-                    (form.querySelector("input[name='lat_dm_min']") || {}).value,
-                    (form.querySelector("select[name='lat_dm_dir']") || {}).value
-                ]);
-                if (!latDmsHas) {
-                    var latDms = ddToDms(initialLat, true);
-                    if (latDms) {
-                        form.querySelector("input[name='lat_dms_deg']").value = latDms.deg;
-                        form.querySelector("input[name='lat_dms_min']").value = latDms.min;
-                        form.querySelector("input[name='lat_dms_sec']").value = latDms.sec;
-                        form.querySelector("select[name='lat_dms_dir']").value = latDms.dir;
-                    }
-                }
-                if (!latDmHas) {
-                    var latDm = ddToDm(initialLat, true);
-                    if (latDm) {
-                        form.querySelector("input[name='lat_dm_deg']").value = latDm.deg;
-                        form.querySelector("input[name='lat_dm_min']").value = latDm.min;
-                        form.querySelector("select[name='lat_dm_dir']").value = latDm.dir;
-                    }
-                }
-            }
-            if (initialLon !== null) {
-                var lonDmsHas = hasAny([
-                    (form.querySelector("input[name='lon_dms_deg']") || {}).value,
-                    (form.querySelector("input[name='lon_dms_min']") || {}).value,
-                    (form.querySelector("input[name='lon_dms_sec']") || {}).value,
-                    (form.querySelector("select[name='lon_dms_dir']") || {}).value
-                ]);
-                var lonDmHas = hasAny([
-                    (form.querySelector("input[name='lon_dm_deg']") || {}).value,
-                    (form.querySelector("input[name='lon_dm_min']") || {}).value,
-                    (form.querySelector("select[name='lon_dm_dir']") || {}).value
-                ]);
-                if (!lonDmsHas) {
-                    var lonDms = ddToDms(initialLon, false);
-                    if (lonDms) {
-                        form.querySelector("input[name='lon_dms_deg']").value = lonDms.deg;
-                        form.querySelector("input[name='lon_dms_min']").value = lonDms.min;
-                        form.querySelector("input[name='lon_dms_sec']").value = lonDms.sec;
-                        form.querySelector("select[name='lon_dms_dir']").value = lonDms.dir;
-                    }
-                }
-                if (!lonDmHas) {
-                    var lonDm = ddToDm(initialLon, false);
-                    if (lonDm) {
-                        form.querySelector("input[name='lon_dm_deg']").value = lonDm.deg;
-                        form.querySelector("input[name='lon_dm_min']").value = lonDm.min;
-                        form.querySelector("select[name='lon_dm_dir']").value = lonDm.dir;
-                    }
-                }
-            }
+            // DMS/DDM are input-only: a one-time conversion to decimal degrees.
+            // We never back-fill them from a saved decimal coordinate.
 
             form.addEventListener("submit", function () {
                 var latVal = toFloat(latInput && latInput.value);
@@ -883,26 +803,38 @@
                     (form.querySelector("select[name='lon_dm_dir']") || {}).value
                 ];
 
-                // If alternate fields are entered, they intentionally override DD.
+                // If alternate fields are entered, they intentionally override
+                // DD. Only then do we rewrite the decimal field — a directly
+                // typed decimal is left exactly as the user entered it.
+                var latFromAlt = false;
+                var lonFromAlt = false;
                 if (hasAny(latDmsVals)) {
                     latVal = parseDms(
                         latDmsVals[0], latDmsVals[1], latDmsVals[2], latDmsVals[3],
                         true
                     );
+                    latFromAlt = true;
                 } else if (hasAny(latDmVals)) {
                     latVal = parseDm(latDmVals[0], latDmVals[1], latDmVals[2], true);
+                    latFromAlt = true;
                 }
                 if (hasAny(lonDmsVals)) {
                     lonVal = parseDms(
                         lonDmsVals[0], lonDmsVals[1], lonDmsVals[2], lonDmsVals[3],
                         false
                     );
+                    lonFromAlt = true;
                 } else if (hasAny(lonDmVals)) {
                     lonVal = parseDm(lonDmVals[0], lonDmVals[1], lonDmVals[2], false);
+                    lonFromAlt = true;
                 }
 
-                if (latVal !== null && latInput) latInput.value = formatDecimal(latVal);
-                if (lonVal !== null && lonInput) lonInput.value = formatDecimal(lonVal);
+                if (latFromAlt && latVal !== null && latInput) {
+                    latInput.value = formatDecimal(latVal);
+                }
+                if (lonFromAlt && lonVal !== null && lonInput) {
+                    lonInput.value = formatDecimal(lonVal);
+                }
             });
 
             /* When the user edits the decimal fields directly, clear the DMS/DDM
@@ -1005,19 +937,24 @@
         })();
     </script>
     <script>
-        /* Signal the server when this tab is truly closed. */
+        /* Keep-alive heartbeat — see index.html for the rationale. While this
+           tab is open we ping the server so it stays up; closing the tab stops
+           the pings and the server exits after its idle grace period. */
         (function () {
-            if (!window._navigating) window._navigating = false;
-            document.querySelectorAll('form').forEach(function (f) {
-                f.addEventListener('submit', function () { window._navigating = true; });
-            });
-            document.querySelectorAll('a').forEach(function (a) {
-                a.addEventListener('click', function () { window._navigating = true; });
-            });
+            var url = "{{ url_for('heartbeat') }}";
+            function ping() {
+                try {
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon(url);
+                    } else {
+                        fetch(url, { method: 'POST', keepalive: true });
+                    }
+                } catch (e) { /* ignore transient errors */ }
+            }
+            ping();
+            setInterval(ping, 10000);
             document.addEventListener('visibilitychange', function () {
-                if (document.visibilityState === 'hidden' && !window._navigating) {
-                    navigator.sendBeacon("{{ url_for('bye') }}", '');
-                }
+                if (document.visibilityState === 'visible') ping();
             });
         })();
     </script>

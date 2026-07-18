@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 import json
 from datetime import datetime, date
@@ -56,9 +57,30 @@ def _parse_datetime(value):
     return None
 
 
-def _normalize_decimal_coord(value):
-    """Normalize coordinate formatting for consistent storage."""
-    return f"{value:.6f}"
+COORD_MAX_DECIMALS = 5  # ~1 m precision; avoids false precision on labels
+
+
+def _coord_decimal_places(raw):
+    """Count the decimal places in a coordinate string (trailing zeros kept)."""
+    s = str(raw or "").strip().replace(",", ".")
+    if "." in s:
+        return len(s.split(".", 1)[1])
+    return 0
+
+
+def _normalize_decimal_coord(value, decimals=None, max_places=COORD_MAX_DECIMALS):
+    """Normalize a decimal coordinate for storage.
+
+    Formats to ``decimals`` places, capped at ``max_places`` to avoid false
+    precision. ``decimals`` defaults to ``max_places`` (used for DMS/DDM
+    conversions). Trailing zeros are NEVER stripped — a value is only ever
+    padded, never trimmed. (The old behaviour forced every coordinate to 6
+    decimal places.)
+    """
+    if decimals is None:
+        decimals = max_places
+    decimals = max(0, min(decimals, max_places))
+    return f"{value:.{decimals}f}"
 
 
 def _parse_number_component(raw):
@@ -163,8 +185,8 @@ def _safe_float(s):
 
 
 import local_store
-from label_formatter import format_event, format_event_labels, _format_date, _format_date_range
-from pdf_generator import generate_pdf
+from label_formatter import format_event, format_event_labels, _format_date, _format_date_range, abbreviate_state
+from pdf_generator import generate_pdf, calculate_label_layout
 from print_settings import load_settings, save_settings, FONT_CHOICES, FONT_SIZE_CHOICES, MIN_LINES_CHOICES, MAX_LINES_CHOICES, LABEL_WIDTH_CHOICES, DATE_FORMAT_CHOICES
 
 app = Flask(__name__)
@@ -220,7 +242,10 @@ def _parse_inat_coordinates(observation):
         lon_val = _parse_decimal_coordinate(coords[0], False)
         lat_val = _parse_decimal_coordinate(coords[1], True)
         if lat_val is not None and lon_val is not None:
-            return _normalize_decimal_coord(lat_val), _normalize_decimal_coord(lon_val)
+            return (
+                _normalize_decimal_coord(lat_val, _coord_decimal_places(coords[1])),
+                _normalize_decimal_coord(lon_val, _coord_decimal_places(coords[0])),
+            )
 
     location = str(observation.get("location") or "").strip()
     if location and "," in location:
@@ -229,7 +254,10 @@ def _parse_inat_coordinates(observation):
             lat_val = _parse_decimal_coordinate(parts[0], True)
             lon_val = _parse_decimal_coordinate(parts[1], False)
             if lat_val is not None and lon_val is not None:
-                return _normalize_decimal_coord(lat_val), _normalize_decimal_coord(lon_val)
+                return (
+                    _normalize_decimal_coord(lat_val, _coord_decimal_places(parts[0])),
+                    _normalize_decimal_coord(lon_val, _coord_decimal_places(parts[1])),
+                )
 
     return None, None
 
@@ -688,9 +716,13 @@ def save_event():
         return redirect(request.referrer or url_for("index"))
 
     if lat_dd is not None:
-        lat_str = _normalize_decimal_coord(lat_dd)
+        # Keep the precision the user typed for a plain decimal; DMS/DDM
+        # conversions use the default (5 places).
+        lat_decimals = None if lat_alt_used else _coord_decimal_places(lat_str)
+        lat_str = _normalize_decimal_coord(lat_dd, lat_decimals)
     if lon_dd is not None:
-        lon_str = _normalize_decimal_coord(lon_dd)
+        lon_decimals = None if lon_alt_used else _coord_decimal_places(lon_str)
+        lon_str = _normalize_decimal_coord(lon_dd, lon_decimals)
     elev_str = request.form.get("elevation", "").strip()
     accuracy_str = request.form.get("gpsAccuracy", "").strip()
     collectors_raw = request.form.get("collectors", "").strip()
@@ -702,6 +734,11 @@ def save_event():
     end_raw = request.form.get("endDateTime", "").strip()
     if created_raw:
         created_at = _parse_datetime(created_raw)
+    elif start_raw and end_raw:
+        # A date range is present — leave the single Event Date empty rather
+        # than copying the range start into it. The label and list views both
+        # use the range directly when start and end are set.
+        created_at = None
     else:
         created_at = _parse_datetime(start_raw) or _parse_datetime(end_raw) or date.today().isoformat()
     start_dt = _parse_datetime(start_raw)
@@ -730,7 +767,7 @@ def save_event():
         "gpsAccuracy": _safe_float(accuracy_str),
         "createdAt": created_at,
         "country": request.form.get("country", ""),
-        "stateProvince": request.form.get("stateProvince", ""),
+        "stateProvince": abbreviate_state(request.form.get("stateProvince", "")),
         "county": request.form.get("county", ""),
         "locality": request.form.get("locality", ""),
         "host": request.form.get("host", ""),
@@ -797,7 +834,9 @@ def duplicate_event(idx):
             created_at = _parse_datetime(created_raw) if created_raw else None
             start_dt = _parse_datetime(start_raw)
             end_dt = _parse_datetime(end_raw)
-            if not created_at:
+            # Don't copy the range start into the single Event Date when a full
+            # range (start + end) was provided.
+            if not created_at and not (start_raw and end_raw):
                 created_at = start_dt or end_dt
             if created_at:
                 new_event["createdAt"] = created_at
@@ -879,6 +918,49 @@ def generate():
     generate_pdf(label_sets, output_path, settings)
 
     return send_file(output_path, as_attachment=True, download_name="labels.pdf")
+
+
+@app.route("/api/estimate", methods=["POST"])
+def api_estimate():
+    global _cached_events
+    if _cached_events is None:
+        _load_events()
+    
+    import json
+    data = request.get_json(silent=True) or {}
+    selected = data.get("selected", [])
+    
+    settings = load_settings()
+    events = []
+    for uuid_str in selected:
+        for event in (_cached_events or []):
+            if event.get("uuid") == uuid_str:
+                qty_key = f"qty_{uuid_str}"
+                qty_str = data.get(qty_key, "10")
+                try:
+                    qty = int(qty_str)
+                except (ValueError, TypeError):
+                    qty = 10
+                event["labelQuantity"] = qty
+                events.append(event)
+                break
+    
+    if not events:
+        return jsonify({"pages": [], "total_pages": 0, "total_labels": 0})
+    
+    result = calculate_label_layout(events, settings)
+    pages_data = []
+    for page in result["pages"]:
+        pages_data.append({
+            "page_num": page["page_num"],
+            "used_pct": page["used_pct"],
+        })
+    
+    return jsonify({
+        "pages": pages_data,
+        "total_pages": result["total_pages"],
+        "total_labels": result["total_labels"],
+    })
 
 
 @app.route("/settings")
@@ -981,6 +1063,9 @@ def sync_phone():
         if not uid:
             continue
 
+        if "stateProvince" in phone_ev:
+            phone_ev["stateProvince"] = abbreviate_state(phone_ev["stateProvince"])
+
         if uid in local_by_uuid:
             idx = local_by_uuid[uid]
             local_ev = _cached_events[idx]
@@ -1069,38 +1154,51 @@ def sync_phone():
     return redirect(url_for("index"))
 
 
-_shutdown_timer = None
-_shutdown_lock = threading.Lock()
+# Auto-shutdown watchdog.
+#
+# The old approach exited 5s after a "tab closed" beacon, which misfired on
+# tab switches, back/forward navigation and bfcache restores and killed the
+# server mid-use. Instead we track activity: every request (including a periodic
+# heartbeat from the open page) refreshes _last_activity, and a background
+# watchdog exits only after IDLE_TIMEOUT with no activity at all. A briefly
+# hidden or locked tab can't kill the server; a truly closed tab stops sending
+# heartbeats and the process exits after the grace period.
+IDLE_TIMEOUT = float(os.environ.get("FIELDCOLLECT_IDLE_TIMEOUT", "90"))  # seconds with zero requests before exit
+_last_activity = time.monotonic()
+_activity_lock = threading.Lock()
 
 
 @app.before_request
-def _cancel_shutdown():
-    """Any incoming request means the user is still using the app — cancel pending shutdown."""
-    global _shutdown_timer
-    with _shutdown_lock:
-        if _shutdown_timer is not None:
-            _shutdown_timer.cancel()
-            _shutdown_timer = None
+def _mark_active():
+    """Any incoming request means the app is still in use."""
+    global _last_activity
+    with _activity_lock:
+        _last_activity = time.monotonic()
 
 
-@app.route("/bye", methods=["POST"])
-def bye():
-    """Browser sends this when the tab is closed or navigated away.
-    Start a short grace period; if a new request arrives it's just navigation and we cancel.
-    If nothing arrives, the tab is really closed and we exit."""
-    global _shutdown_timer
-    with _shutdown_lock:
-        if _shutdown_timer is not None:
-            _shutdown_timer.cancel()
-        _shutdown_timer = threading.Timer(5.0, lambda: os._exit(0))
-        _shutdown_timer.daemon = True
-        _shutdown_timer.start()
+@app.route("/heartbeat", methods=["POST"])
+def heartbeat():
+    """Pinged periodically by the open page so an idle-but-open tab stays alive.
+    Activity itself is recorded in the before_request hook."""
     return "", 204
+
+
+def _start_idle_watchdog():
+    """Exit the process once the browser has been gone for IDLE_TIMEOUT."""
+    def _watch():
+        while True:
+            time.sleep(IDLE_TIMEOUT / 3.0)
+            with _activity_lock:
+                idle = time.monotonic() - _last_activity
+            if idle > IDLE_TIMEOUT:
+                os._exit(0)
+    threading.Thread(target=_watch, daemon=True).start()
 
 
 if __name__ == "__main__":
     debug = os.environ.get("FIELDCOLLECT_DEBUG", "0") == "1"
     port = int(os.environ.get("FIELDCOLLECT_PORT", "5000"))
+    _start_idle_watchdog()
     app.run(
         host="127.0.0.1",
         port=port,

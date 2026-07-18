@@ -101,6 +101,7 @@
     <form method="POST" action="{{ url_for('generate') }}">
         <div class="controls">
             <button type="submit" class="btn btn-generate">Generate Labels PDF</button>
+            <span id="page-estimate" class="page-estimate"></span>
             <label class="select-all-label">
                 <input type="checkbox" id="selectAll" onchange="toggleAll(this)" class="checkbox-lg"> Select All
             </label>
@@ -573,6 +574,7 @@
                 } else {
                     persistSelectedState();
                 }
+                updatePageEstimateDebounced();
             });
         }
 
@@ -620,6 +622,7 @@
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: payload.toString()
                 });
+                updatePageEstimateDebounced();
             });
         });
 
@@ -639,6 +642,58 @@
                 });
             });
         });
+
+        /* ── Page estimate ── */
+        var _estimateDebounce = null;
+        function updatePageEstimateDebounced() {
+            if (_estimateDebounce) clearTimeout(_estimateDebounce);
+            _estimateDebounce = setTimeout(updatePageEstimate, 300);
+        }
+
+        function updatePageEstimate() {
+            var selected = [];
+            var data = {};
+            document.querySelectorAll('input[name="selected"]:checked').forEach(function (cb) {
+                selected.push(cb.value);
+                var qtyInput = document.querySelector('input[name="qty_' + cb.value + '"]');
+                if (qtyInput) {
+                    data['qty_' + cb.value] = qtyInput.value;
+                }
+            });
+
+            if (selected.length === 0) {
+                var el = document.getElementById('page-estimate');
+                if (el) el.innerHTML = '';
+                return;
+            }
+
+            data.selected = selected;
+
+            fetch("{{ url_for('api_estimate') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).then(function (res) {
+                return res.json();
+            }).then(function (result) {
+                var el = document.getElementById('page-estimate');
+                if (!el) return;
+                if (result.total_pages === 0) {
+                    el.innerHTML = '';
+                    return;
+                }
+                var items = result.pages.map(function (p) {
+                    return '<span class="page-item">P' + p.page_num + ': ' + p.used_pct + '%</span>';
+                }).join('');
+                el.innerHTML = items;
+            }).catch(function () {
+                var el = document.getElementById('page-estimate');
+                if (el) el.innerHTML = '';
+            });
+        }
+        
+        /* Initialize page estimate on load */
+        updatePageEstimate();
     </script>
     <script>
         (function () {
@@ -883,18 +938,25 @@
 
         function confirmDup() {
             if (!_pendingDupIdx) return;
-            var payload = new URLSearchParams();
-            payload.append('createdAt', document.getElementById('dup-createdAt').value || '');
-            payload.append('startDateTime', document.getElementById('dup-startDateTime').value || '');
-            payload.append('endDateTime', document.getElementById('dup-endDateTime').value || '');
-            fetch("{{ url_for('duplicate_event', idx=0) }}".replace("0", _pendingDupIdx), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: payload.toString()
-            }).then(function () {
-                window._navigating = true;
-                window.location.reload();
+            // Submit a real form so the browser does a single navigation:
+            // POST -> 302 -> index, which shows the flash message exactly once.
+            // (A fetch + reload would follow the redirect itself, consuming the
+            // flash before the reloaded page could display it.)
+            window._navigating = true;
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{{ url_for('duplicate_event', idx=0) }}".replace("0", _pendingDupIdx);
+            [['createdAt', 'dup-createdAt'],
+             ['startDateTime', 'dup-startDateTime'],
+             ['endDateTime', 'dup-endDateTime']].forEach(function (p) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = p[0];
+                input.value = document.getElementById(p[1]).value || '';
+                form.appendChild(input);
             });
+            document.body.appendChild(form);
+            form.submit();
         }
 
         document.getElementById('dup-modal').addEventListener('click', function (e) {
@@ -1016,20 +1078,29 @@
         })();
     </script>
     <script>
-        /* Signal the server when this tab is truly closed.
-           Uses the global window._navigating flag (set before any in-app
-           navigation) to avoid false shutdown triggers. */
+        /* Keep-alive heartbeat. While this tab is open we ping the local
+           server so it knows the app is still in use; when the tab is truly
+           closed the pings stop and the server shuts itself down after a grace
+           period (see IDLE_TIMEOUT in app.py). This replaces the old
+           pagehide/sendBeacon shutdown, which misfired on tab switches and
+           back/forward navigation and killed the server mid-use. */
         (function () {
-            document.querySelectorAll('form').forEach(function (f) {
-                f.addEventListener('submit', function () { window._navigating = true; });
-            });
-            document.querySelectorAll('a').forEach(function (a) {
-                a.addEventListener('click', function () { window._navigating = true; });
-            });
+            var url = "{{ url_for('heartbeat') }}";
+            function ping() {
+                try {
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon(url);
+                    } else {
+                        fetch(url, { method: 'POST', keepalive: true });
+                    }
+                } catch (e) { /* ignore transient errors */ }
+            }
+            ping();
+            setInterval(ping, 10000);
+            /* Re-assert liveness the moment a backgrounded tab (whose timers
+               may have been throttled) becomes visible again. */
             document.addEventListener('visibilitychange', function () {
-                if (document.visibilityState === 'hidden' && !window._navigating) {
-                    navigator.sendBeacon("{{ url_for('bye') }}", '');
-                }
+                if (document.visibilityState === 'visible') ping();
             });
         })();
     </script>

@@ -14,8 +14,12 @@ sys.modules["label_formatter"] = types.SimpleNamespace(
     format_event_labels=lambda e, q, s: [],
     _format_date=lambda s: s or "",
     _format_date_range=lambda a, b: f"{a or ''} - {b or ''}".strip(" -"),
+    abbreviate_state=lambda s: s,
 )
-sys.modules["pdf_generator"] = types.SimpleNamespace(generate_pdf=lambda *a, **k: None)
+sys.modules["pdf_generator"] = types.SimpleNamespace(
+    generate_pdf=lambda *a, **k: None,
+    calculate_label_layout=lambda *a, **k: None,
+)
 sys.modules["print_settings"] = types.SimpleNamespace(
     load_settings=lambda: {},
     save_settings=lambda x: None,
@@ -23,6 +27,8 @@ sys.modules["print_settings"] = types.SimpleNamespace(
     FONT_SIZE_CHOICES=[],
     MIN_LINES_CHOICES=[],
     MAX_LINES_CHOICES=[],
+    LABEL_WIDTH_CHOICES=[],
+    DATE_FORMAT_CHOICES=[],
 )
 
 app_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app.py"))

@@ -109,3 +109,112 @@ def generate_pdf(label_sets, output_path, settings=None):
 
     c.save()
     return output_path
+
+
+def calculate_label_layout(events, settings=None):
+    """
+    Calculate label layout and page usage without generating PDF.
+    
+    Returns dict with:
+      - pages: list of dicts with used_pct (actual area filled)
+      - total_pages: number of pages
+      - total_labels: total number of labels
+    """
+    if settings:
+        font_name = settings.get("font", FONT_NAME)
+        font_size = settings.get("fontSize", FONT_SIZE)
+        label_width_cm = settings.get("labelWidth", 1.76)
+    else:
+        font_name = FONT_NAME
+        font_size = FONT_SIZE
+        label_width_cm = 1.76
+    
+    _ensure_font_registered(font_name)
+    label_w = label_width_cm * cm
+    COLS = int(USABLE_W / label_w)
+    
+    line_height = font_size + 0.5
+    
+    from label_formatter import format_event_labels
+    
+    label_groups = []
+    for event in events:
+        qty = event.get("labelQuantity", 10)
+        try:
+            qty = int(qty)
+        except (TypeError, ValueError):
+            qty = 10
+        
+        label_sets = format_event_labels(event, qty, settings=settings)
+        for lines, qty in label_sets:
+            num_lines = len(lines)
+            label_groups.append({
+                "lines": num_lines,
+                "qty": qty,
+            })
+    
+    total_labels = 0
+    col = 0
+    y_cursor = PAGE_H - MARGIN_TOP
+    
+    # Track height used in each column of each page
+    # page_columns[page_num][col_num] = used_height
+    page_columns = [[0] * COLS]  # Start with page 0, all columns at 0
+    
+    def ensure_space(height):
+        nonlocal col, y_cursor, page_columns
+        
+        if y_cursor - height < MARGIN_BOTTOM:
+            # Need more space - move to next column or page
+            # First, record the height used in current column
+            col_height = (PAGE_H - MARGIN_TOP) - y_cursor
+            page_num = len(page_columns) - 1
+            page_columns[page_num][col] = col_height
+            
+            col += 1
+            if col >= COLS:
+                # Start new page
+                page_columns.append([0] * COLS)
+                col = 0
+            y_cursor = PAGE_H - MARGIN_TOP
+    
+    def add_height(height):
+        nonlocal y_cursor
+        y_cursor -= height
+    
+    for i, group in enumerate(label_groups):
+        label_height = group["lines"] * line_height
+        num_copies = group["qty"]
+        
+        for _ in range(num_copies):
+            ensure_space(label_height)
+            add_height(label_height)
+            total_labels += 1
+        
+        # Add separator between event groups
+        if i < len(label_groups) - 1:
+            ensure_space(line_height)
+            add_height(line_height)
+    
+    # Record the last column's height
+    if total_labels > 0:
+        final_col_height = (PAGE_H - MARGIN_TOP) - y_cursor
+        page_num = len(page_columns) - 1
+        page_columns[page_num][col] = final_col_height
+    
+    # Calculate actual page usage (sum of column areas / total page area)
+    result_pages = []
+    for page_num, columns in enumerate(page_columns):
+        total_col_height = sum(columns)
+        max_possible = USABLE_H * COLS  # All columns full
+        pct = int((total_col_height / max_possible) * 100)
+        result_pages.append({
+            "page_num": page_num + 1,
+            "used_pct": min(100, pct),
+        })
+    
+    return {
+        "pages": result_pages,
+        "total_pages": len(result_pages),
+        "total_labels": total_labels,
+    }
