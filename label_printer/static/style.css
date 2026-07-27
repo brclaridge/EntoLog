@@ -351,22 +351,22 @@ tbody tr:hover {
 td:nth-child(1), th:nth-child(1) { width: 32px; padding: 10px 4px 10px 11px; }
 /* col 2: qty */
 td:nth-child(2), th:nth-child(2) { width: 1%; white-space: nowrap; }
-/* col 3: event id */
-td:nth-child(3), th:nth-child(3) { width: 1%; white-space: nowrap; }
-/* col 4: country */
+/* col 3: archived */
+td:nth-child(3), th:nth-child(3) { width: 1%; white-space: nowrap; text-align: center; }
+/* col 4: event id */
 td:nth-child(4), th:nth-child(4) { width: 1%; white-space: nowrap; }
-/* col 5: state */
+/* col 5: country */
 td:nth-child(5), th:nth-child(5) { width: 1%; white-space: nowrap; }
-/* col 6: county */
+/* col 6: state */
 td:nth-child(6), th:nth-child(6) { width: 1%; white-space: nowrap; }
-/* col 7: locality — gets remaining space, allowed to wrap */
-/* col 8: date */
-td:nth-child(8), th:nth-child(8) { width: 1%; white-space: nowrap; }
-/* col 9: collectors — gets remaining space, allowed to wrap */
-/* col 10: technique */
-td:nth-child(10), th:nth-child(10) { width: 240px; white-space: normal; }
-/* col 11: archived */
-td:nth-child(11), th:nth-child(11) { width: 1%; white-space: nowrap; text-align: center; }
+/* col 7: county */
+td:nth-child(7), th:nth-child(7) { width: 1%; white-space: nowrap; }
+/* col 8: locality — gets remaining space, allowed to wrap */
+/* col 9: date */
+td:nth-child(9), th:nth-child(9) { width: 1%; white-space: nowrap; }
+/* col 10: collectors — gets remaining space, allowed to wrap */
+/* col 11: technique */
+td:nth-child(11), th:nth-child(11) { width: 240px; white-space: normal; }
 /* col 12: map */
 td:nth-child(12), th:nth-child(12) { width: 1%; white-space: nowrap; text-align: center; }
 /* col 13: photos */
@@ -380,15 +380,15 @@ td:nth-child(14), th:nth-child(14) { width: 1%; white-space: nowrap; }
 #selected-table td:nth-child(1), #selected-table th:nth-child(1) { width: 22px; padding: 9px 4px; }
 #selected-table td:nth-child(2), #selected-table th:nth-child(2) { width: 32px; padding: 10px 4px 10px 11px; }
 #selected-table td:nth-child(3), #selected-table th:nth-child(3) { width: 1%; white-space: nowrap; }
-#selected-table td:nth-child(4), #selected-table th:nth-child(4) { width: 1%; white-space: nowrap; }
+#selected-table td:nth-child(4), #selected-table th:nth-child(4) { width: 1%; white-space: nowrap; text-align: center; }
 #selected-table td:nth-child(5), #selected-table th:nth-child(5) { width: 1%; white-space: nowrap; }
 #selected-table td:nth-child(6), #selected-table th:nth-child(6) { width: 1%; white-space: nowrap; }
 #selected-table td:nth-child(7), #selected-table th:nth-child(7) { width: 1%; white-space: nowrap; }
-/* col 8: locality — gets remaining space, allowed to wrap */
-#selected-table td:nth-child(9), #selected-table th:nth-child(9) { width: 1%; white-space: nowrap; }
-/* col 10: collectors — gets remaining space, allowed to wrap */
-#selected-table td:nth-child(11), #selected-table th:nth-child(11) { width: 240px; white-space: normal; }
-#selected-table td:nth-child(12), #selected-table th:nth-child(12) { width: 1%; white-space: nowrap; text-align: center; }
+#selected-table td:nth-child(8), #selected-table th:nth-child(8) { width: 1%; white-space: nowrap; }
+/* col 9: locality — gets remaining space, allowed to wrap */
+#selected-table td:nth-child(10), #selected-table th:nth-child(10) { width: 1%; white-space: nowrap; }
+/* col 11: collectors — gets remaining space, allowed to wrap */
+#selected-table td:nth-child(12), #selected-table th:nth-child(12) { width: 240px; white-space: normal; }
 #selected-table td:nth-child(13), #selected-table th:nth-child(13) { width: 1%; white-space: nowrap; text-align: center; }
 #selected-table td:nth-child(14), #selected-table th:nth-child(14) { width: 1%; white-space: nowrap; text-align: center; }
 #selected-table td:nth-child(15), #selected-table th:nth-child(15) { width: 1%; white-space: nowrap; }

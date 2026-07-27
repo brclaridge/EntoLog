@@ -114,6 +114,7 @@
                     <th class="drag-col"></th>
                     <th></th>
                     <th>Qty</th>
+                    <th>Archived</th>
                     <th>Event ID</th>
                     <th>Country</th>
                     <th>State</th>
@@ -122,7 +123,6 @@
                     <th>Date</th>
                     <th>Collectors</th>
                     <th>Technique</th>
-                    <th>Archived</th>
                     <th>Map</th>
                     <th></th>
                     <th></th>
@@ -134,6 +134,11 @@
                     <td class="drag-handle" title="Drag to reorder">&#x2630;</td>
                     <td class="select-cell"><input type="checkbox" name="selected" value="{{ item.event.uuid }}" checked class="checkbox-lg"></td>
                     <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
                     <td>{{ item.event.collectionCode or "" }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
@@ -148,11 +153,6 @@
                     </td>
                     <td>{{ (item.event.collectors or [])|join(", ") }}</td>
                     <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
-                    <td class="archived-cell">
-                        <input type="checkbox" class="checkbox-lg archived-checkbox"
-                               data-uuid="{{ item.event.uuid }}"
-                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
-                    </td>
                     <td>
                         {% if item.event.latitude is not none and item.event.longitude is not none %}
                         <a class="btn-sm btn-edit"
@@ -210,6 +210,7 @@
                 <tr>
                     <th></th>
                     <th>Qty</th>
+                    <th>Archived</th>
                     <th>Event ID</th>
                     <th>Country</th>
                     <th>State</th>
@@ -218,7 +219,6 @@
                     <th>Date</th>
                     <th>Collectors</th>
                     <th>Technique</th>
-                    <th>Archived</th>
                     <th>Map</th>
                     <th></th>
                     <th></th>
@@ -231,6 +231,11 @@
                                class="checkbox-lg"
                                {% if item.event.uuid in selected %}checked{% endif %}></td>
                     <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
                     <td>{{ item.event.collectionCode or "" }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
@@ -245,11 +250,6 @@
                     </td>
                     <td>{{ (item.event.collectors or [])|join(", ") }}</td>
                     <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
-                    <td class="archived-cell">
-                        <input type="checkbox" class="checkbox-lg archived-checkbox"
-                               data-uuid="{{ item.event.uuid }}"
-                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
-                    </td>
                     <td>
                         {% if item.event.latitude is not none and item.event.longitude is not none %}
                         <a class="btn-sm btn-edit"
@@ -308,6 +308,7 @@
                 <tr>
                     <th></th>
                     <th>Qty</th>
+                    <th>Archived</th>
                     <th>Event ID</th>
                     <th>Country</th>
                     <th>State</th>
@@ -316,7 +317,6 @@
                     <th>Date</th>
                     <th>Collectors</th>
                     <th>Technique</th>
-                    <th>Archived</th>
                     <th>Map</th>
                     <th></th>
                     <th></th>
@@ -329,6 +329,11 @@
                                class="checkbox-lg"
                                {% if item.event.uuid in selected %}checked{% endif %}></td>
                     <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
                     <td>{{ item.event.collectionCode or "" }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
@@ -343,11 +348,6 @@
                     </td>
                     <td>{{ (item.event.collectors or [])|join(", ") }}</td>
                     <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
-                    <td class="archived-cell">
-                        <input type="checkbox" class="checkbox-lg archived-checkbox"
-                               data-uuid="{{ item.event.uuid }}"
-                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
-                    </td>
                     <td>
                         {% if item.event.latitude is not none and item.event.longitude is not none %}
                         <a class="btn-sm btn-edit"
@@ -406,6 +406,7 @@
                 <tr>
                     <th></th>
                     <th>Qty</th>
+                    <th>Archived</th>
                     <th>Event ID</th>
                     <th>Country</th>
                     <th>State</th>
@@ -414,7 +415,6 @@
                     <th>Date</th>
                     <th>Collectors</th>
                     <th>Technique</th>
-                    <th>Archived</th>
                     <th>Map</th>
                     <th></th>
                     <th></th>
@@ -427,6 +427,11 @@
                                class="checkbox-lg"
                                {% if item.event.uuid in selected %}checked{% endif %}></td>
                     <td><input type="number" name="qty_{{ item.event.uuid }}" value="{{ item.event.labelQuantity or 10 }}" min="1" max="1000" class="qty-input"></td>
+                    <td class="archived-cell">
+                        <input type="checkbox" class="checkbox-lg archived-checkbox"
+                               data-uuid="{{ item.event.uuid }}"
+                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
+                    </td>
                     <td>{{ item.event.collectionCode or "" }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
@@ -441,11 +446,6 @@
                     </td>
                     <td>{{ (item.event.collectors or [])|join(", ") }}</td>
                     <td class="technique-cell">{{ item.event.collectionTechnique or "" }}</td>
-                    <td class="archived-cell">
-                        <input type="checkbox" class="checkbox-lg archived-checkbox"
-                               data-uuid="{{ item.event.uuid }}"
-                               {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
-                    </td>
                     <td>
                         {% if item.event.latitude is not none and item.event.longitude is not none %}
                         <a class="btn-sm btn-edit"
