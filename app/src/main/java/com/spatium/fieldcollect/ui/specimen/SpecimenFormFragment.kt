@@ -3,7 +3,6 @@ package com.spatium.fieldcollect.ui.specimen
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -37,6 +36,18 @@ import java.util.UUID
 
 class SpecimenFormFragment : Fragment() {
 
+    private companion object {
+        const val KEY_RECORD_UUID = "recordUuid"
+        const val KEY_COLLECTION_CODE = "collectionCode"
+        const val KEY_EVENT_DATETIME = "eventDateTime"
+        const val KEY_COORD_PRECISION = "coordPrecision"
+        const val KEY_EXISTING_PHOTOS = "existingPhotoCount"
+        const val KEY_PHOTO_PATHS = "photoPaths"
+        const val KEY_SELECTED_COLLECTORS = "selectedCollectorIds"
+        const val KEY_PENDING_PHOTO = "pendingPhotoPath"
+        const val KEY_GPS_ACCURACY = "lastGpsAccuracy"
+    }
+
     private var _binding: FragmentSpecimenFormBinding? = null
     private val binding get() = _binding!!
 
@@ -46,15 +57,18 @@ class SpecimenFormFragment : Fragment() {
 
     private var lastGpsAccuracy: Float? = null
     private var eventDateTime: LocalDateTime = LocalDateTime.now()
-    private var photoUri: Uri? = null
+    // Only meaningful in edit mode; new records are assigned a code on insert.
     private var collectionCode: String = ""
     private var existingPhotoCount: Int = 0
     private var coordPrecision: Int = 5
 
     private val isEditMode: Boolean by lazy { arguments?.getString("eventUuid") != null }
-    private val recordUuid: String by lazy {
-        arguments?.getString("eventUuid") ?: UUID.randomUUID().toString()
-    }
+    private lateinit var recordUuid: String
+
+    // Path of a capture that is still in flight. Held here rather than in
+    // CameraHelper so it survives the process being killed while the camera app
+    // is in the foreground — otherwise the photo lands on disk unreferenced.
+    private var pendingPhotoPath: String? = null
 
     private val photoPaths: MutableList<String> = mutableListOf()
 
@@ -79,12 +93,12 @@ class SpecimenFormFragment : Fragment() {
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
-        if (success) {
-            cameraHelper.getLastPhotoPath()?.let { path ->
-                photoPaths.add(path)
-                showPhotoPreview(path)
-                updatePhotoButton()
-            }
+        val path = pendingPhotoPath
+        pendingPhotoPath = null
+        if (success && path != null) {
+            photoPaths.add(path)
+            showPhotoPreview(path)
+            updatePhotoButton()
         }
     }
 
@@ -97,6 +111,13 @@ class SpecimenFormFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Must be resolved before any result callback fires. A new record's UUID is
+        // random, so it has to be carried across process death or photos already
+        // written under it are orphaned.
+        recordUuid = savedInstanceState?.getString(KEY_RECORD_UUID)
+            ?: arguments?.getString("eventUuid")
+            ?: UUID.randomUUID().toString()
 
         locationHelper = LocationHelper(requireContext())
         cameraHelper = CameraHelper(requireContext())
@@ -141,21 +162,63 @@ class SpecimenFormFragment : Fragment() {
 
         updateEventDateTimeButton()
 
-        if (isEditMode) {
-            loadExistingEvent()
-        } else {
-            viewLifecycleOwner.lifecycleScope.launch {
-                collectionCode = viewModel.generateCode()
+        when {
+            // Coming back from a rotation or a process kill. The restored state is
+            // newer than what is in the database, so don't reload over the top of it.
+            savedInstanceState != null -> {
+                restoreState(savedInstanceState)
+                refreshCollectors()
+                refreshCollectionTechniques()
             }
-            locationPermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+            isEditMode -> loadExistingEvent()
+            else -> {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
                 )
-            )
-            refreshCollectors()
-            refreshCollectionTechniques()
+                refreshCollectors()
+                refreshCollectionTechniques()
+            }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Text typed into EditTexts is saved by the view hierarchy; only the state
+        // held in fields needs saving here.
+        outState.putString(KEY_RECORD_UUID, recordUuid)
+        outState.putString(KEY_COLLECTION_CODE, collectionCode)
+        outState.putString(KEY_EVENT_DATETIME, eventDateTime.toString())
+        outState.putInt(KEY_COORD_PRECISION, coordPrecision)
+        outState.putInt(KEY_EXISTING_PHOTOS, existingPhotoCount)
+        outState.putStringArrayList(KEY_PHOTO_PATHS, ArrayList(photoPaths))
+        outState.putLongArray(KEY_SELECTED_COLLECTORS, selectedCollectorIds.toLongArray())
+        outState.putString(KEY_PENDING_PHOTO, pendingPhotoPath)
+        lastGpsAccuracy?.let { outState.putFloat(KEY_GPS_ACCURACY, it) }
+    }
+
+    private fun restoreState(state: Bundle) {
+        collectionCode = state.getString(KEY_COLLECTION_CODE, "")
+        coordPrecision = state.getInt(KEY_COORD_PRECISION, 5)
+        existingPhotoCount = state.getInt(KEY_EXISTING_PHOTOS, 0)
+        pendingPhotoPath = state.getString(KEY_PENDING_PHOTO)
+        photoPaths.addAll(state.getStringArrayList(KEY_PHOTO_PATHS) ?: emptyList())
+        state.getLongArray(KEY_SELECTED_COLLECTORS)?.let { selectedCollectorIds.addAll(it.toList()) }
+        if (state.containsKey(KEY_GPS_ACCURACY)) {
+            lastGpsAccuracy = state.getFloat(KEY_GPS_ACCURACY)
+        }
+        state.getString(KEY_EVENT_DATETIME)?.let {
+            eventDateTime = LocalDateTime.parse(it)
+        }
+
+        updateEventDateTimeButton()
+        // Set the dropdown from coordPrecision rather than trusting the restored
+        // text, so the visible value and the value that gets saved can't diverge.
+        binding.ddCoordPrecision.setText(coordPrecision.toString(), false)
+        updatePhotoButton()
+        photoPaths.lastOrNull()?.let { showPhotoPreview(it) }
     }
 
     private fun pickEventDateTime() {
@@ -341,8 +404,8 @@ class SpecimenFormFragment : Fragment() {
     }
 
     private fun launchCamera() {
-        val (uri, _) = cameraHelper.createPhotoFile(recordUuid)
-        photoUri = uri
+        val (uri, path) = cameraHelper.createPhotoFile(recordUuid)
+        pendingPhotoPath = path
         cameraLauncher.launch(uri)
     }
 
@@ -508,7 +571,7 @@ class SpecimenFormFragment : Fragment() {
             if (isEditMode) {
                 viewModel.update(event, selectedCollectorIds.toList())
             } else {
-                viewModel.insert(event, selectedCollectorIds.toList())
+                viewModel.insertNew(event, selectedCollectorIds.toList())
             }
             // Save only new photos
             for (path in photoPaths) {

@@ -18,9 +18,9 @@ class CollectingEventViewModel(application: Application) : AndroidViewModel(appl
     val collectors = repo.collectors
     val collectionTechniques: Flow<List<CollectionTechnique>> = repo.collectionTechniques
 
-    suspend fun insert(event: CollectingEvent, collectorIds: List<Long>) {
-        repo.insertCollectingEvent(event, collectorIds)
-    }
+    /** Saves a newly created record; the collection code is assigned on insert. */
+    suspend fun insertNew(event: CollectingEvent, collectorIds: List<Long>): String =
+        repo.insertNewCollectingEvent(event, collectorIds)
 
     suspend fun update(event: CollectingEvent, collectorIds: List<Long>) {
         repo.updateCollectingEvent(event, collectorIds)
@@ -38,7 +38,6 @@ class CollectingEventViewModel(application: Application) : AndroidViewModel(appl
 
     suspend fun addCollector(name: String): Long = repo.insertCollector(name)
     suspend fun addCollectionTechnique(name: String): Long = repo.insertCollectionTechnique(name)
-    suspend fun generateCode(): String = repo.generateCollectionCode()
 
     fun getPhotos(recordUuid: String): Flow<List<Photo>> = repo.getPhotosForRecord(recordUuid)
     suspend fun addPhoto(photo: Photo): Long = repo.insertPhoto(photo)

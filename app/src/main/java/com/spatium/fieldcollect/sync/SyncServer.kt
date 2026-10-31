@@ -10,19 +10,57 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
+import java.security.MessageDigest
 
 class SyncServer(
     private val context: Context,
-    port: Int = 8080
+    port: Int = 8080,
+    private val pairingToken: String
 ) : NanoHTTPD(port) {
 
     private val repo = FieldRepository((context.applicationContext as FieldCollectApp).database)
     private val jsonExporter = JsonExporter(context)
     private val photosDir = File(context.filesDir, "photos")
 
+    private val authLock = Any()
+    private var failedAttempts = 0
+    private var lockedUntilMs = 0L
+
+    // A 4-digit code only has 10,000 possibilities, so unlike a long random
+    // token it needs a brute-force throttle: each wrong guess adds delay
+    // before the next one is even checked, capped at 5s.
+    private fun isAuthorized(session: IHTTPSession): Boolean {
+        synchronized(authLock) {
+            if (System.currentTimeMillis() < lockedUntilMs) return false
+        }
+        val provided = session.headers["x-sync-token"]
+        val ok = provided != null && MessageDigest.isEqual(
+            provided.toByteArray(Charsets.UTF_8),
+            pairingToken.toByteArray(Charsets.UTF_8)
+        )
+        synchronized(authLock) {
+            if (ok) {
+                failedAttempts = 0
+            } else {
+                failedAttempts++
+                val delayMs = minOf(failedAttempts * 500L, 5000L)
+                lockedUntilMs = System.currentTimeMillis() + delayMs
+            }
+        }
+        return ok
+    }
+
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
         val method = session.method
+
+        if (!isAuthorized(session)) {
+            return newFixedLengthResponse(
+                Response.Status.UNAUTHORIZED,
+                MIME_PLAINTEXT,
+                "Unauthorized: missing or invalid pairing code"
+            )
+        }
 
         return when {
             method == Method.GET && uri == "/api/events" -> serveEvents()

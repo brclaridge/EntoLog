@@ -4,6 +4,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Room writes the schema for each database version here. These files are
+// committed so migrations can be written (and verified) against them.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.spatium.fieldcollect"
     compileSdk = 34

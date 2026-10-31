@@ -3,7 +3,6 @@ package com.spatium.fieldcollect.ui.trap
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -37,6 +36,20 @@ import java.util.UUID
 
 class TrapSampleFormFragment : Fragment() {
 
+    private companion object {
+        const val KEY_RECORD_UUID = "recordUuid"
+        const val KEY_COLLECTION_CODE = "collectionCode"
+        const val KEY_EVENT_DATETIME = "eventDateTime"
+        const val KEY_START_DATETIME = "startDateTime"
+        const val KEY_END_DATETIME = "endDateTime"
+        const val KEY_COORD_PRECISION = "coordPrecision"
+        const val KEY_EXISTING_PHOTOS = "existingPhotoCount"
+        const val KEY_PHOTO_PATHS = "photoPaths"
+        const val KEY_SELECTED_COLLECTORS = "selectedCollectorIds"
+        const val KEY_PENDING_PHOTO = "pendingPhotoPath"
+        const val KEY_GPS_ACCURACY = "lastGpsAccuracy"
+    }
+
     private var _binding: FragmentTrapSampleFormBinding? = null
     private val binding get() = _binding!!
 
@@ -46,18 +59,22 @@ class TrapSampleFormFragment : Fragment() {
 
     private var lastGpsAccuracy: Float? = null
     private var eventDateTime: LocalDateTime = LocalDateTime.now()
+    // Only meaningful in edit mode; new records are assigned a code on insert.
     private var collectionCode: String = ""
     private var existingPhotoCount: Int = 0
     private var coordPrecision: Int = 5
 
     private val isEditMode: Boolean by lazy { arguments?.getString("eventUuid") != null }
-    private val recordUuid: String by lazy {
-        arguments?.getString("eventUuid") ?: UUID.randomUUID().toString()
-    }
+    private lateinit var recordUuid: String
 
     private var startDateTime: LocalDateTime? = null
     private var endDateTime: LocalDateTime? = null
-    private var photoUri: Uri? = null
+
+    // Path of a capture that is still in flight. Held here rather than in
+    // CameraHelper so it survives the process being killed while the camera app
+    // is in the foreground — otherwise the photo lands on disk unreferenced.
+    private var pendingPhotoPath: String? = null
+
     private val photoPaths: MutableList<String> = mutableListOf()
 
     private var allCollectors: List<Collector> = emptyList()
@@ -81,12 +98,12 @@ class TrapSampleFormFragment : Fragment() {
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
-        if (success) {
-            cameraHelper.getLastPhotoPath()?.let { path ->
-                photoPaths.add(path)
-                showPhotoPreview(path)
-                updatePhotoButton()
-            }
+        val path = pendingPhotoPath
+        pendingPhotoPath = null
+        if (success && path != null) {
+            photoPaths.add(path)
+            showPhotoPreview(path)
+            updatePhotoButton()
         }
     }
 
@@ -99,6 +116,13 @@ class TrapSampleFormFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        // Must be resolved before any result callback fires. A new record's UUID is
+        // random, so it has to be carried across process death or photos already
+        // written under it are orphaned.
+        recordUuid = savedInstanceState?.getString(KEY_RECORD_UUID)
+            ?: arguments?.getString("eventUuid")
+            ?: UUID.randomUUID().toString()
 
         locationHelper = LocationHelper(requireContext())
         cameraHelper = CameraHelper(requireContext())
@@ -145,21 +169,67 @@ class TrapSampleFormFragment : Fragment() {
 
         updateEventDateTimeButton()
 
-        if (isEditMode) {
-            loadExistingEvent()
-        } else {
-            viewLifecycleOwner.lifecycleScope.launch {
-                collectionCode = viewModel.generateCode()
+        when {
+            // Coming back from a rotation or a process kill. The restored state is
+            // newer than what is in the database, so don't reload over the top of it.
+            savedInstanceState != null -> {
+                restoreState(savedInstanceState)
+                refreshCollectors()
+                refreshCollectionTechniques()
             }
-            locationPermissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+            isEditMode -> loadExistingEvent()
+            else -> {
+                locationPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
                 )
-            )
-            refreshCollectors()
-            refreshCollectionTechniques()
+                refreshCollectors()
+                refreshCollectionTechniques()
+            }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Text typed into EditTexts is saved by the view hierarchy; only the state
+        // held in fields needs saving here.
+        outState.putString(KEY_RECORD_UUID, recordUuid)
+        outState.putString(KEY_COLLECTION_CODE, collectionCode)
+        outState.putString(KEY_EVENT_DATETIME, eventDateTime.toString())
+        outState.putString(KEY_START_DATETIME, startDateTime?.toString())
+        outState.putString(KEY_END_DATETIME, endDateTime?.toString())
+        outState.putInt(KEY_COORD_PRECISION, coordPrecision)
+        outState.putInt(KEY_EXISTING_PHOTOS, existingPhotoCount)
+        outState.putStringArrayList(KEY_PHOTO_PATHS, ArrayList(photoPaths))
+        outState.putLongArray(KEY_SELECTED_COLLECTORS, selectedCollectorIds.toLongArray())
+        outState.putString(KEY_PENDING_PHOTO, pendingPhotoPath)
+        lastGpsAccuracy?.let { outState.putFloat(KEY_GPS_ACCURACY, it) }
+    }
+
+    private fun restoreState(state: Bundle) {
+        collectionCode = state.getString(KEY_COLLECTION_CODE, "")
+        coordPrecision = state.getInt(KEY_COORD_PRECISION, 5)
+        existingPhotoCount = state.getInt(KEY_EXISTING_PHOTOS, 0)
+        pendingPhotoPath = state.getString(KEY_PENDING_PHOTO)
+        photoPaths.addAll(state.getStringArrayList(KEY_PHOTO_PATHS) ?: emptyList())
+        state.getLongArray(KEY_SELECTED_COLLECTORS)?.let { selectedCollectorIds.addAll(it.toList()) }
+        if (state.containsKey(KEY_GPS_ACCURACY)) {
+            lastGpsAccuracy = state.getFloat(KEY_GPS_ACCURACY)
+        }
+        state.getString(KEY_EVENT_DATETIME)?.let { eventDateTime = LocalDateTime.parse(it) }
+        startDateTime = state.getString(KEY_START_DATETIME)?.let { LocalDateTime.parse(it) }
+        endDateTime = state.getString(KEY_END_DATETIME)?.let { LocalDateTime.parse(it) }
+
+        updateEventDateTimeButton()
+        startDateTime?.let { updateDateTimeButton(isStart = true, ldt = it) }
+        endDateTime?.let { updateDateTimeButton(isStart = false, ldt = it) }
+        // Set the dropdown from coordPrecision rather than trusting the restored
+        // text, so the visible value and the value that gets saved can't diverge.
+        binding.ddCoordPrecision.setText(coordPrecision.toString(), false)
+        updatePhotoButton()
+        photoPaths.lastOrNull()?.let { showPhotoPreview(it) }
     }
 
     private fun pickEventDateTime() {
@@ -185,6 +255,15 @@ class TrapSampleFormFragment : Fragment() {
             cal.get(Calendar.MONTH),
             cal.get(Calendar.DAY_OF_MONTH)
         ).show()
+    }
+
+    private fun updateDateTimeButton(isStart: Boolean, ldt: LocalDateTime) {
+        val display = DateUtils.formatForDisplay(DateUtils.localDateTimeToIso(ldt))
+        if (isStart) {
+            binding.btnStartDatetime.text = "${getString(R.string.start_datetime)}: $display"
+        } else {
+            binding.btnEndDatetime.text = "${getString(R.string.end_datetime)}: $display"
+        }
     }
 
     private fun updateEventDateTimeButton() {
@@ -243,15 +322,13 @@ class TrapSampleFormFragment : Fragment() {
             e.startDateTime?.let { iso ->
                 try {
                     startDateTime = DateUtils.isoToLocalDateTime(iso)
-                    binding.btnStartDatetime.text =
-                        "${getString(R.string.start_datetime)}: ${DateUtils.formatForDisplay(iso)}"
+                    updateDateTimeButton(isStart = true, ldt = startDateTime!!)
                 } catch (_: Exception) {}
             }
             e.endDateTime?.let { iso ->
                 try {
                     endDateTime = DateUtils.isoToLocalDateTime(iso)
-                    binding.btnEndDatetime.text =
-                        "${getString(R.string.end_datetime)}: ${DateUtils.formatForDisplay(iso)}"
+                    updateDateTimeButton(isStart = false, ldt = endDateTime!!)
                 } catch (_: Exception) {}
             }
 
@@ -339,8 +416,8 @@ class TrapSampleFormFragment : Fragment() {
     }
 
     private fun launchCamera() {
-        val (uri, _) = cameraHelper.createPhotoFile(recordUuid)
-        photoUri = uri
+        val (uri, path) = cameraHelper.createPhotoFile(recordUuid)
+        pendingPhotoPath = path
         cameraLauncher.launch(uri)
     }
 
@@ -373,15 +450,8 @@ class TrapSampleFormFragment : Fragment() {
                     requireContext(),
                     { _, hour, minute ->
                         val ldt = LocalDateTime.of(year, month + 1, day, hour, minute)
-                        if (isStart) {
-                            startDateTime = ldt
-                            binding.btnStartDatetime.text =
-                                "${getString(R.string.start_datetime)}: ${DateUtils.formatForDisplay(DateUtils.localDateTimeToIso(ldt))}"
-                        } else {
-                            endDateTime = ldt
-                            binding.btnEndDatetime.text =
-                                "${getString(R.string.end_datetime)}: ${DateUtils.formatForDisplay(DateUtils.localDateTimeToIso(ldt))}"
-                        }
+                        if (isStart) startDateTime = ldt else endDateTime = ldt
+                        updateDateTimeButton(isStart, ldt)
                     },
                     cal.get(Calendar.HOUR_OF_DAY),
                     cal.get(Calendar.MINUTE),
@@ -570,7 +640,7 @@ class TrapSampleFormFragment : Fragment() {
             if (isEditMode) {
                 viewModel.update(event, selectedCollectorIds.toList())
             } else {
-                viewModel.insert(event, selectedCollectorIds.toList())
+                viewModel.insertNew(event, selectedCollectorIds.toList())
             }
             // Save only new photos
             for (path in photoPaths) {

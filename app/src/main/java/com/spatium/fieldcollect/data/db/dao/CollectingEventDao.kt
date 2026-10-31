@@ -44,6 +44,19 @@ interface CollectingEventDao {
     @Query("SELECT COUNT(*) FROM collecting_events")
     suspend fun count(): Int
 
-    @Query("SELECT COUNT(*) FROM collecting_events WHERE collectionCode LIKE :prefix || '%'")
-    suspend fun countByCodePrefix(prefix: String): Int
+    /**
+     * Highest sequence number already issued for a YYMMDD prefix, or null if the
+     * day has none. Deliberately a MAX rather than a COUNT: deleting a record
+     * must not free its number for reuse, because the old number is already on a
+     * printed label. The prefix is matched with its trailing dash so hand-typed
+     * codes from the desktop that merely start with the same digits are ignored.
+     */
+    @Query(
+        "SELECT MAX(CAST(SUBSTR(collectionCode, 8) AS INTEGER)) FROM collecting_events " +
+            "WHERE collectionCode LIKE :prefix || '-%'"
+    )
+    suspend fun maxSeqForPrefix(prefix: String): Int?
+
+    @Query("SELECT COUNT(*) FROM collecting_events WHERE collectionCode = :code")
+    suspend fun countByCode(code: String): Int
 }

@@ -62,7 +62,12 @@ class HomeFragment : Fragment() {
                     }
                     is WifiSyncViewModel.ServerState.Running -> {
                         binding.btnSync.text = getString(R.string.stop_wifi_sync)
-                        binding.syncInfo.text = "${state.ip}:${state.port}"
+                        binding.syncInfo.text = getString(
+                            R.string.wifi_sync_info,
+                            state.ip,
+                            state.port,
+                            state.token
+                        )
                         binding.syncInfo.visibility = View.VISIBLE
                     }
                     is WifiSyncViewModel.ServerState.Error -> {

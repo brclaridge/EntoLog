@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import com.spatium.fieldcollect.data.db.dao.CollectionTechniqueDao
 import com.spatium.fieldcollect.data.db.dao.CollectorDao
 import com.spatium.fieldcollect.data.db.dao.CollectingEventDao
@@ -24,7 +25,7 @@ import com.spatium.fieldcollect.data.db.entity.Photo
         Photo::class
     ],
     version = 8,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
 
@@ -37,6 +38,20 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /**
+         * Every schema change needs a Migration here and a matching bump of the
+         * @Database version. Without one Room throws on open rather than
+         * dropping the tables — collecting events are field data that can't be
+         * re-gathered, so failing loudly is the point.
+         *
+         *     private val MIGRATION_8_9 = object : Migration(8, 9) {
+         *         override fun migrate(db: SupportSQLiteDatabase) {
+         *             db.execSQL("ALTER TABLE collecting_events ADD COLUMN habitat TEXT NOT NULL DEFAULT ''")
+         *         }
+         *     }
+         */
+        private val MIGRATIONS: Array<Migration> = arrayOf()
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -44,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "fieldcollect.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(*MIGRATIONS)
                     .build()
                     .also { INSTANCE = it }
             }
