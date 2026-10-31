@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>{{ "Edit" if event else "New" }} Collecting Event</h1>
+    <h1 class="page-title">{{ "Edit" if event else "New" }} Collecting Event</h1>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -25,6 +25,23 @@
         <input type="hidden" name="uuid" value="{{ event.uuid or '' }}">
         {% endif %}
 
+        <label class="settings-checkbox-label trap-toggle">
+            <input type="checkbox" name="isTrapSample" value="1" id="is-trap-sample" {{ "checked" if is_trap else "" }}>
+            Trap sample <small class="muted">(e.g. malaise — Event ID becomes trap code + end date)</small>
+        </label>
+
+        <div class="form-row">
+            <label class="trap-only">Trap Code
+                <input type="text" name="trapCode" id="trap-code" value="{{ event.trapCode if event and event.trapCode else '' }}" placeholder="e.g. SAM2" autocomplete="off">
+            </label>
+            <label>Event ID
+                <input type="text" name="collectionCode" id="collection-code" value="{{ event.collectionCode if event else '' }}" placeholder="e.g. 260803-001">
+            </label>
+            <label>Label Quantity
+                <input type="number" name="labelQuantity" value="{{ event.labelQuantity if event and event.labelQuantity else 10 }}" min="1" max="1000">
+            </label>
+        </div>
+
         <div class="form-row inat-row">
             <label>iNaturalist Observation #
                 <input type="text" id="inat-observation-id" placeholder="e.g. 194901712" inputmode="numeric">
@@ -35,18 +52,8 @@
         </div>
         <div id="inat-fetch-status" class="form-status" aria-live="polite"></div>
 
-        <div class="form-row">
-            <label>Event ID
-                <input type="text" name="collectionCode" value="{{ event.collectionCode if event else '' }}" placeholder="e.g. BC-2025-001">
-            </label>
-        </div>
-
-        <div class="form-row">
-            <label>Label Quantity
-                <input type="number" name="labelQuantity" value="{{ event.labelQuantity if event and event.labelQuantity else 10 }}" min="1" max="1000">
-            </label>
-        </div>
-
+        <div class="event-form-columns">
+        <div class="event-form-col">
         <fieldset>
             <legend>Location</legend>
             <div class="form-row three-col">
@@ -69,97 +76,107 @@
                            data-list="locality-options" autocomplete="off">
                 </label>
             </div>
-            <div class="form-row four-col">
+            <div class="form-row three-col">
                 <label>Latitude
-                    <input type="text" name="latitude" value="{{ event.latitude if event and event.latitude is not none else '' }}" placeholder="e.g. 38.82500">
+                    <input type="text" name="latitude" value="{{ event.latitude if event and event.latitude is not none else '' }}" placeholder="e.g. 38.825">
                 </label>
                 <label>Longitude
-                    <input type="text" name="longitude" value="{{ event.longitude if event and event.longitude is not none else '' }}" placeholder="e.g. -77.70500">
+                    <input type="text" name="longitude" value="{{ event.longitude if event and event.longitude is not none else '' }}" placeholder="e.g. -77.705">
                 </label>
                 <label>Elevation (m)
                     <input type="number" name="elevation" value="{{ event.elevation if event and event.elevation is not none else '' }}">
                 </label>
+            </div>
+            <div class="form-row">
                 <div class="form-btn-cell">
                     <button type="button" class="btn btn-cancel" id="btn-open-earth">Open in Google Earth</button>
                 </div>
             </div>
 
-            <fieldset class="coord-alt-fieldset">
-                <legend>Coordinates (DMS)</legend>
-                <div class="form-row coord-alt-grid">
-                    <label>Lat Deg
-                        <input type="number" step="any" name="lat_dms_deg" placeholder="38">
-                    </label>
-                    <label>Lat Min
-                        <input type="number" step="any" name="lat_dms_min" placeholder="49">
-                    </label>
-                    <label>Lat Sec
-                        <input type="number" step="any" name="lat_dms_sec" placeholder="30">
-                    </label>
-                    <label>Lat Dir
-                        <select name="lat_dms_dir">
-                            <option value="">-</option>
-                            <option value="N">N</option>
-                            <option value="S">S</option>
-                        </select>
-                    </label>
-                    <label>Lon Deg
-                        <input type="number" step="any" name="lon_dms_deg" placeholder="77">
-                    </label>
-                    <label>Lon Min
-                        <input type="number" step="any" name="lon_dms_min" placeholder="42">
-                    </label>
-                    <label>Lon Sec
-                        <input type="number" step="any" name="lon_dms_sec" placeholder="18">
-                    </label>
-                    <label>Lon Dir
-                        <select name="lon_dms_dir">
-                            <option value="">-</option>
-                            <option value="E">E</option>
-                            <option value="W">W</option>
-                        </select>
-                    </label>
-                </div>
-            </fieldset>
+            <details class="coord-alt-details">
+                <summary>Alternate coordinate entry (DMS / DM)</summary>
 
-            <fieldset class="coord-alt-fieldset">
-                <legend>Coordinates (Degree + Decimal Minute)</legend>
-                <div class="form-row coord-alt-grid">
-                    <label>Lat Deg
-                        <input type="number" step="any" name="lat_dm_deg" placeholder="38">
-                    </label>
-                    <label>Lat Min.Dec
-                        <input type="number" step="any" name="lat_dm_min" placeholder="49.500">
-                    </label>
-                    <label>Lat Dir
-                        <select name="lat_dm_dir">
-                            <option value="">-</option>
-                            <option value="N">N</option>
-                            <option value="S">S</option>
-                        </select>
-                    </label>
-                    <label>Lon Deg
-                        <input type="number" step="any" name="lon_dm_deg" placeholder="77">
-                    </label>
-                    <label>Lon Min.Dec
-                        <input type="number" step="any" name="lon_dm_min" placeholder="42.300">
-                    </label>
-                    <label>Lon Dir
-                        <select name="lon_dm_dir">
-                            <option value="">-</option>
-                            <option value="E">E</option>
-                            <option value="W">W</option>
-                        </select>
-                    </label>
+                <div class="coord-alt-block">
+                    <div class="coord-alt-heading">Coordinates (DMS)</div>
+                    <div class="form-row coord-alt-grid coord-alt-grid-4">
+                        <label>Lat Deg
+                            <input type="number" step="any" name="lat_dms_deg" placeholder="38">
+                        </label>
+                        <label>Lat Min
+                            <input type="number" step="any" name="lat_dms_min" placeholder="49">
+                        </label>
+                        <label>Lat Sec
+                            <input type="number" step="any" name="lat_dms_sec" placeholder="30">
+                        </label>
+                        <label>Lat Dir
+                            <select name="lat_dms_dir">
+                                <option value="">-</option>
+                                <option value="N">N</option>
+                                <option value="S">S</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="form-row coord-alt-grid coord-alt-grid-4">
+                        <label>Lon Deg
+                            <input type="number" step="any" name="lon_dms_deg" placeholder="77">
+                        </label>
+                        <label>Lon Min
+                            <input type="number" step="any" name="lon_dms_min" placeholder="42">
+                        </label>
+                        <label>Lon Sec
+                            <input type="number" step="any" name="lon_dms_sec" placeholder="18">
+                        </label>
+                        <label>Lon Dir
+                            <select name="lon_dms_dir">
+                                <option value="">-</option>
+                                <option value="E">E</option>
+                                <option value="W">W</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
-            </fieldset>
+
+                <div class="coord-alt-block">
+                    <div class="coord-alt-heading">Coordinates (Degree + Decimal Minute)</div>
+                    <div class="form-row coord-alt-grid coord-alt-grid-6">
+                        <label>Lat Deg
+                            <input type="number" step="any" name="lat_dm_deg" placeholder="38">
+                        </label>
+                        <label>Lat Min
+                            <input type="number" step="any" name="lat_dm_min" placeholder="49.500">
+                        </label>
+                        <label>Lat Dir
+                            <select name="lat_dm_dir">
+                                <option value="">-</option>
+                                <option value="N">N</option>
+                                <option value="S">S</option>
+                            </select>
+                        </label>
+                        <label>Lon Deg
+                            <input type="number" step="any" name="lon_dm_deg" placeholder="77">
+                        </label>
+                        <label>Lon Min
+                            <input type="number" step="any" name="lon_dm_min" placeholder="42.300">
+                        </label>
+                        <label>Lon Dir
+                            <select name="lon_dm_dir">
+                                <option value="">-</option>
+                                <option value="E">E</option>
+                                <option value="W">W</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+            </details>
             <input type="hidden" name="gpsAccuracy" value="{{ event.gpsAccuracy if event and event.gpsAccuracy is not none else '' }}">
         </fieldset>
+        </div>
 
+        <div class="event-form-col">
         <fieldset>
             <legend>Collection Details</legend>
             <div class="form-row three-col">
-                <label>Event Date
+                <label class="general-only">Event Date
                     <input type="text" name="createdAt" class="date-auto"
                            value="{{ event.createdAt[:10] if event and event.createdAt else '' }}"
                            placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
@@ -179,19 +196,21 @@
                 </label>
             </div>
             <div class="form-row">
-                <label>Collection Technique <small>(Ctrl+I for italic)</small>
-                    <input type="hidden" name="collectionTechnique"
-                           value="{{ event.collectionTechnique if event and event.collectionTechnique else '' }}">
-                    <div class="rich-input" contenteditable="true"
-                         data-list="technique-options" data-field="collectionTechnique"
-                         data-placeholder="e.g. Malaise trap, hand collecting"></div>
-                </label>
                 <label>Collectors <small>(comma-separated)</small>
                     <input type="text" name="collectors"
                            value="{{ event.collectors|join(', ') if event and event.collectors else '' }}"
                            placeholder="e.g. B Claridge, CW Ramsey"
                            data-list="collector-options"
                            autocomplete="off">
+                </label>
+            </div>
+            <div class="form-row">
+                <label>Collection Technique <small>(Ctrl+I for italic)</small>
+                    <input type="hidden" name="collectionTechnique"
+                           value="{{ event.collectionTechnique if event and event.collectionTechnique else '' }}">
+                    <div class="rich-input" contenteditable="true"
+                         data-list="technique-options" data-field="collectionTechnique"
+                         data-placeholder="e.g. Malaise trap, hand collecting"></div>
                 </label>
             </div>
             <div class="form-row">
@@ -209,6 +228,8 @@
             <div class="rich-input rich-input-multi" contenteditable="true"
                  data-field="notes"></div>
         </fieldset>
+        </div>
+        </div>
 
         {% if photos %}
         <fieldset>
@@ -225,9 +246,134 @@
 
         <div class="form-actions">
             <button type="submit" class="btn btn-generate">Save &amp; Sync to Drive</button>
-            <a href="{{ url_for('index') }}" class="btn btn-cancel">Cancel</a>
+            <a href="{{ list_url() }}" class="btn btn-cancel">{{ "Back to List" if event else "Cancel" }}</a>
+            {% if event %}
+            <button type="submit" class="btn btn-dup-event" name="saveAsCopy" value="1"
+                    title="Create a new event from this form as it stands. The original keeps its last saved values.">Duplicate</button>
+            <button type="button" class="btn btn-danger" id="btn-delete-event" onclick="openDeleteModal()">Delete Event</button>
+            {% endif %}
         </div>
     </form>
+
+    <script>
+        /* Trap sample toggle + Event ID auto-fill.
+           Trap samples: ID = trap code + end date (SAM2-260826).
+           One-day events: ID = event date + next free number (260803-002).
+           The ID is only rewritten while it is blank or still holds the value
+           this script last filled in, so a hand-typed ID is never replaced. */
+        (function () {
+            var form = document.querySelector('.event-form');
+            var trapBox = document.getElementById('is-trap-sample');
+            var trapCode = document.getElementById('trap-code');
+            var idInput = document.getElementById('collection-code');
+            var created = form.querySelector('[name="createdAt"]');
+            var endDate = form.querySelector('[name="endDateTime"]');
+            var generalIds = {{ general_ids|tojson }};
+            var copied = {{ "true" if copied else "false" }};
+
+            function yymmdd(v) {
+                var m = /^(\d{2})(\d{2})-(\d{2})-(\d{2})/.exec((v || '').trim());
+                return m ? m[2] + m[3] + m[4] : '';
+            }
+            function trapId() {
+                var code = trapCode.value.trim(), end = yymmdd(endDate.value);
+                return code && end ? code + '-' + end : '';
+            }
+            function generalId() {
+                var prefix = yymmdd(created.value);
+                if (!prefix) return '';
+                var n = 0;
+                generalIds.forEach(function (id) {
+                    if (id.slice(0, 6) === prefix) n = Math.max(n, parseInt(id.slice(7), 10));
+                });
+                return prefix + '-' + String(n + 1).padStart(3, '0');
+            }
+            function computeId() { return trapBox.checked ? trapId() : generalId(); }
+
+            // What the ID would be if this script owned it. A copy just made by
+            // Duplicate counts as script-owned, so its ID follows date edits.
+            var lastAuto = (copied || idInput.value.trim() === computeId()) ? idInput.value.trim() : null;
+
+            function refreshId() {
+                var current = idInput.value.trim();
+                if (trapBox.checked) {
+                    // Trap samples: the ID is always trap code + end date, so the
+                    // Event ID box is read-only and greyed out. Without a
+                    // trap code yet (older records) the existing ID is kept.
+                    var t = trapId();
+                    if (t) idInput.value = t;
+                    else if (trapCode.value.trim()) idInput.value = '';
+                    lastAuto = idInput.value.trim();
+                    return;
+                }
+                if (current === '' || current === lastAuto) {
+                    var next = computeId();
+                    if (next) {
+                        idInput.value = next;
+                        lastAuto = next;
+                    } else if (current === lastAuto) {
+                        lastAuto = '';
+                        idInput.value = '';
+                    }
+                }
+            }
+            function applyMode() {
+                var trap = trapBox.checked;
+                form.classList.toggle('is-trap', trap);
+                created.disabled = trap;   // hidden field must not be submitted
+                idInput.readOnly = trap;
+                idInput.placeholder = trap ? 'Trap code + end date' : 'e.g. 260803-001';
+            }
+
+            trapBox.addEventListener('change', function () { applyMode(); refreshId(); });
+            // Deferred so the date auto-dash formatter has run first.
+            function refreshSoon() { setTimeout(refreshId, 0); }
+            [trapCode, endDate, created].forEach(function (el) {
+                el.addEventListener('input', refreshSoon);
+                el.addEventListener('change', refreshSoon);
+            });
+            form.addEventListener('submit', refreshId);
+            applyMode();
+            refreshId();
+        })();
+    </script>
+
+    {% if event %}
+    <div id="delete-modal" class="modal-overlay" style="display:none">
+        <div class="modal">
+            <h3>Delete Collecting Event?</h3>
+            <dl class="modal-dl">
+                {% if event.collectionCode %}<dt>Event ID</dt><dd>{{ event.collectionCode }}</dd>{% endif %}
+                {% if event.country %}<dt>Country</dt><dd>{{ event.country }}</dd>{% endif %}
+                {% if event.stateProvince %}<dt>State</dt><dd>{{ event.stateProvince }}</dd>{% endif %}
+                {% if event.county %}<dt>County</dt><dd>{{ event.county }}</dd>{% endif %}
+                {% if event.locality %}<dt>Locality</dt><dd>{{ event.locality }}</dd>{% endif %}
+                {% if event.collectors %}<dt>Collectors</dt><dd>{{ event.collectors|join(', ') }}</dd>{% endif %}
+            </dl>
+            <p class="modal-warning">This action cannot be undone.</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-cancel" onclick="closeDeleteModal()">Cancel</button>
+                <form method="POST" action="{{ url_for('delete_event', idx=idx) }}" class="inline-form">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+        function openDeleteModal() {
+            document.getElementById('delete-modal').style.display = 'flex';
+        }
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').style.display = 'none';
+        }
+        document.getElementById('delete-modal').addEventListener('click', function (e) {
+            if (e.target === this) closeDeleteModal();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeDeleteModal();
+        });
+    </script>
+    {% endif %}
 
     {% if photos %}
     <div id="lightbox" class="lightbox-overlay" style="display:none" onclick="closeLightbox(event)">

@@ -306,6 +306,60 @@ def _inat_prefill_fields(observation, observation_id):
     return payload
 
 
+_GENERAL_ID_RE = re.compile(r"^(\d{6})-(\d{3})$")
+
+
+def _yymmdd(iso_value):
+    """'2026-08-26' (or a longer ISO datetime) -> '260826'; '' if unusable."""
+    v = (iso_value or "")[:10]
+    if len(v) != 10 or v[4] != "-" or v[7] != "-":
+        return ""
+    return v[2:4] + v[5:7] + v[8:10]
+
+
+def _trap_event_id(trap_code, end_iso):
+    """Trap sample ID: trap code + bottle-collection (end) date, e.g. SAM2-260826."""
+    code = (trap_code or "").strip()
+    end = _yymmdd(end_iso)
+    if not code or not end:
+        return ""
+    return f"{code}-{end}"
+
+
+def _next_general_id(date_iso, exclude_uuid=None):
+    """Next free YYMMDD-NNN for a one-day event on this date."""
+    prefix = _yymmdd(date_iso)
+    if not prefix:
+        return ""
+    used = 0
+    for e in _cached_events or []:
+        if exclude_uuid and e.get("uuid") == exclude_uuid:
+            continue
+        m = _GENERAL_ID_RE.match((e.get("collectionCode") or "").strip())
+        if m and m.group(1) == prefix:
+            used = max(used, int(m.group(2)))
+    return f"{prefix}-{used + 1:03d}"
+
+
+def _is_trap_sample(event):
+    """Explicit checkbox wins; older records fall back to having a date range."""
+    if "isTrapSample" in event:
+        return bool(event.get("isTrapSample"))
+    return bool(event.get("startDateTime") and event.get("endDateTime"))
+
+
+def _roll_event_id(event, exclude_uuid=None):
+    """Event ID for a freshly duplicated event, or None to keep the current one."""
+    if _is_trap_sample(event):
+        if event.get("trapCode"):
+            return _trap_event_id(event.get("trapCode"), event.get("endDateTime"))
+        return None
+    code = (event.get("collectionCode") or "").strip()
+    if _GENERAL_ID_RE.match(code):
+        return _next_general_id(event.get("createdAt"), exclude_uuid) or None
+    return None
+
+
 def _load_events():
     global _cached_events
     try:
@@ -435,9 +489,34 @@ def serve_photo(filename):
     return send_file(photo_path)
 
 
+# Query string of the last list view (search, sort, selection), so going back
+# to the list from the edit form restores it. Single-user desktop app, so a
+# module global is enough.
+_last_list_query = ""
+
+
+def _list_url():
+    base = url_for("index")
+    return f"{base}?{_last_list_query}" if _last_list_query else base
+
+
+@app.context_processor
+def _inject_list_url():
+    return {"list_url": _list_url, "list_event_id": _list_event_id}
+
+
+def _list_event_id(event):
+    """What the list's Event ID column shows. Trap samples: trap code + end
+    date (SAM2-260826), or SAM2-… while the sample is still out."""
+    if _is_trap_sample(event) and event.get("trapCode"):
+        return _trap_event_id(event["trapCode"], event.get("endDateTime")) or f'{event["trapCode"]}-…'
+    return event.get("collectionCode") or ""
+
+
 @app.route("/")
 def index():
-    global _cached_events
+    global _cached_events, _last_list_query
+    _last_list_query = request.query_string.decode("utf-8", "replace")
     if _cached_events is None:
         _load_events()
     sort1 = request.args.get("sort1", "").strip()
@@ -466,7 +545,7 @@ def index():
                 return str(event.get("startDateTime") or "")
             return str(event.get("createdAt") or "")
         if field == "type":
-            return "Trap Sample" if event.get("startDateTime") and event.get("endDateTime") else "General"
+            return "Trap Sample" if _is_trap_sample(event) else "General"
         if field == "state":
             return str(event.get("stateProvince") or "")
         if field == "county":
@@ -480,6 +559,9 @@ def index():
         if field == "collectors":
             return ", ".join(event.get("collectors") or [])
         if field == "code":
+            if _is_trap_sample(event) and event.get("trapCode"):
+                # Group a trap's samples together, in end-date order.
+                return f'{event["trapCode"]} {event.get("endDateTime") or "9999"}'
             return str(event.get("collectionCode") or "")
         if field in ("status", "printed"):
             return "1" if event_is_archived(event) else "0"
@@ -498,6 +580,7 @@ def index():
     def searchable_text(event):
         parts = [
             event.get("collectionCode"),
+            event.get("trapCode"),
             event.get("country"),
             event.get("stateProvince"),
             event.get("county"),
@@ -565,6 +648,9 @@ def new_event():
         event=None,
         idx=None,
         photos=[],
+        is_trap=False,
+        copied=False,
+        general_ids=_general_ids(),
         technique_options=suggestions["techniques"],
         collector_options=suggestions["collectors"],
         collector_group_options=suggestions["collector_groups"],
@@ -585,7 +671,7 @@ def edit_event(idx):
         _load_events()
     if idx < 0 or idx >= len(_cached_events):
         flash("Event not found", "error")
-        return redirect(url_for("index"))
+        return redirect(_list_url())
     suggestions = _collect_suggestions()
     event = _cached_events[idx]
     photos = _photos_for_event(event.get("uuid"))
@@ -594,6 +680,9 @@ def edit_event(idx):
         event=event,
         idx=idx,
         photos=photos,
+        is_trap=_is_trap_sample(event),
+        copied=request.args.get("copied") == "1",
+        general_ids=_general_ids(exclude_uuid=event.get("uuid")),
         technique_options=suggestions["techniques"],
         collector_options=suggestions["collectors"],
         collector_group_options=suggestions["collector_groups"],
@@ -639,6 +728,12 @@ def save_event():
         _load_events()
 
     idx = request.form.get("idx")
+    # "Duplicate" on the edit page submits the form as it stands; the copy
+    # gets a fresh uuid and the original stays as last saved.
+    save_as_copy = request.form.get("saveAsCopy") == "1"
+    source_idx = idx
+    if save_as_copy:
+        idx = None
     is_edit = idx is not None and idx != ""
 
     # Build event dict from form
@@ -756,11 +851,19 @@ def save_event():
             flash(msg, "error")
         return redirect(request.referrer or url_for("index"))
 
-    submitted_uuid = request.form.get("uuid", "").strip()
+    submitted_uuid = "" if save_as_copy else request.form.get("uuid", "").strip()
+    is_trap = request.form.get("isTrapSample") == "1"
+    trap_code = request.form.get("trapCode", "").strip() if is_trap else ""
+    collection_code = request.form.get("collectionCode", "").strip()
+    if is_trap and trap_code:
+        # Trap sample IDs are always derived (the form hides the ID box).
+        collection_code = _trap_event_id(trap_code, end_dt)
 
     event = {
         "uuid": submitted_uuid or str(uuid.uuid4()),
-        "collectionCode": request.form.get("collectionCode", ""),
+        "collectionCode": collection_code,
+        "isTrapSample": is_trap,
+        "trapCode": trap_code,
         "latitude": lat_str if lat_str else None,
         "longitude": lon_str if lon_str else None,
         "elevation": _safe_int(elev_str),
@@ -794,11 +897,47 @@ def save_event():
     else:
         event["archived"] = False
         event["labelsPrinted"] = False
+        if save_as_copy:
+            if is_trap:
+                # Next sample from the same trap: it starts when the last one ended.
+                event["startDateTime"] = event["endDateTime"] or event["startDateTime"]
+                event["endDateTime"] = None
+                event["createdAt"] = event["startDateTime"]
+            rolled = _roll_event_id(event)
+            if rolled is not None:
+                event["collectionCode"] = rolled
         _cached_events.append(event)
+        if save_as_copy:
+            event["coordPrecision"] = _source_coord_precision(source_idx)
+            _save_events()
+            flash("Duplicated — you're now editing the copy", "success")
+            return redirect(url_for("edit_event", idx=len(_cached_events) - 1, copied=1))
         flash("Collecting event added", "success")
 
     _save_events()
-    return redirect(url_for("index"))
+    # Stay on the form after saving so the event can be duplicated or tweaked.
+    target_idx = int(idx) if is_edit else len(_cached_events) - 1
+    return redirect(url_for("edit_event", idx=target_idx))
+
+
+def _general_ids(exclude_uuid=None):
+    """All YYMMDD-NNN IDs in use, for the form's client-side numbering."""
+    return [
+        (e.get("collectionCode") or "").strip()
+        for e in _cached_events or []
+        if e.get("uuid") != exclude_uuid
+        and _GENERAL_ID_RE.match((e.get("collectionCode") or "").strip())
+    ]
+
+
+def _source_coord_precision(source_idx):
+    try:
+        i = int(source_idx)
+    except (TypeError, ValueError):
+        return None
+    if 0 <= i < len(_cached_events):
+        return _cached_events[i].get("coordPrecision")
+    return None
 
 
 @app.route("/event/<int:idx>/delete", methods=["POST"])
@@ -810,7 +949,7 @@ def delete_event(idx):
         _cached_events.pop(idx)
         _save_events()
         flash("Event deleted", "success")
-    return redirect(url_for("index"))
+    return redirect(_list_url())
 
 
 @app.route("/event/<int:idx>/duplicate", methods=["POST"])
@@ -840,14 +979,20 @@ def duplicate_event(idx):
                 created_at = start_dt or end_dt
             if created_at:
                 new_event["createdAt"] = created_at
-            if start_raw:
-                new_event["startDateTime"] = start_dt
-            if end_raw:
-                new_event["endDateTime"] = end_dt
+            # The modal shows all three dates, so a blank box means "clear it"
+            # (e.g. the end date of the next trap sample isn't known yet).
+            new_event["startDateTime"] = start_dt
+            new_event["endDateTime"] = end_dt
+        if _is_trap_sample(new_event) and not new_event.get("endDateTime"):
+            new_event["createdAt"] = new_event.get("startDateTime")
+        rolled = _roll_event_id(new_event)
+        if rolled is not None:
+            new_event["collectionCode"] = rolled
         _cached_events.append(new_event)
         _save_events()
-        flash("Event duplicated", "success")
-    return redirect(url_for("index"))
+        flash("Duplicated — you're now editing the copy", "success")
+        return redirect(url_for("edit_event", idx=len(_cached_events) - 1, copied=1))
+    return redirect(_list_url())
 
 
 @app.route("/event/qty", methods=["POST"])
@@ -913,7 +1058,7 @@ def generate():
         label_sets.extend(format_event_labels(event, qty, settings))
     if not label_sets:
         flash("No events selected", "error")
-        return redirect(url_for("index"))
+        return redirect(_list_url())
     output_path = os.path.join(tempfile.gettempdir(), "labels.pdf")
     generate_pdf(label_sets, output_path, settings)
 
@@ -1021,25 +1166,36 @@ def sync_phone():
         _load_events()
 
     phone_ip = request.form.get("phone_ip", "").strip()
+    phone_token = request.form.get("phone_token", "").strip()
     if not phone_ip:
         flash("Please enter the phone IP address", "error")
-        return redirect(url_for("index"))
+        return redirect(_list_url())
+    if not phone_token:
+        flash("Please enter the phone's pairing code", "error")
+        return redirect(_list_url())
 
     # Accept full URL (e.g. http://10.0.0.154:8080) or bare IP
     phone_ip = re.sub(r"^https?://", "", phone_ip).rstrip("/")
     phone_url = f"http://{phone_ip}"
+    sync_headers = {"X-Sync-Token": phone_token}
 
     try:
         # 1. Fetch events from phone
         req = url_request.Request(
             f"{phone_url}/api/events",
-            headers={"Accept": "application/json"},
+            headers={**sync_headers, "Accept": "application/json"},
         )
         with url_request.urlopen(req, timeout=10) as resp:
             phone_events = json.loads(resp.read().decode("utf-8"))
+    except url_error.HTTPError as e:
+        if e.code == 401:
+            flash("Failed to connect to phone: invalid pairing code", "error")
+        else:
+            flash(f"Failed to connect to phone: {e}", "error")
+        return redirect(_list_url())
     except Exception as e:
         flash(f"Failed to connect to phone: {e}", "error")
-        return redirect(url_for("index"))
+        return redirect(_list_url())
 
     # 2. Merge phone events into local events (newer-wins)
     local_by_uuid = {}
@@ -1099,6 +1255,7 @@ def sync_phone():
             f"{phone_url}/api/events",
             data=export_events,
             headers={
+                **sync_headers,
                 "Content-Type": "application/json",
             },
             method="POST",
@@ -1113,7 +1270,7 @@ def sync_phone():
     try:
         req = url_request.Request(
             f"{phone_url}/api/photos",
-            headers={"Accept": "application/json"},
+            headers={**sync_headers, "Accept": "application/json"},
         )
         with url_request.urlopen(req, timeout=10) as resp:
             photo_list = json.loads(resp.read().decode("utf-8"))
@@ -1128,7 +1285,7 @@ def sync_phone():
             if os.path.exists(local_path):
                 continue
             try:
-                photo_req = url_request.Request(f"{phone_url}/api/photos/{filename}")
+                photo_req = url_request.Request(f"{phone_url}/api/photos/{filename}", headers=sync_headers)
                 with url_request.urlopen(photo_req, timeout=30) as photo_resp:
                     with open(local_path, "wb") as f:
                         f.write(photo_resp.read())
@@ -1151,7 +1308,7 @@ def sync_phone():
     if not parts:
         parts.append("Everything up to date")
     flash("Sync complete: " + ", ".join(parts), "success")
-    return redirect(url_for("index"))
+    return redirect(_list_url())
 
 
 # Auto-shutdown watchdog.

@@ -17,8 +17,22 @@ pdfmetrics.registerFont(TTFont(FONT_NAME + "-Italic", FONT_ITALIC_PATH))
 
 # Max label width in points (~1.76cm)
 LABEL_WIDTH_PT = 49.89  # 1.76cm = 49.89pt
+# Hard cap on lines per label (settings key "maxLines"). Enforced by the layout
+# ladder in _lay_out: an event that cannot be squeezed into this many lines
+# overflows onto a continuation label rather than growing past it.
 MAX_LINES = 5
 MIN_LINES = 4
+
+# Field kinds, in the order they appear on a label. The layout ladder grants
+# concessions per kind, so packing needs to know what each string is.
+GEO = "geo"
+LOCALITY = "locality"
+ELEVATION = "elevation"
+COORDS = "coords"
+DATE = "date"
+COLLECTORS = "collectors"
+TECHNIQUE = "technique"
+HOST = "host"
 
 _registered_fonts = {FONT_NAME, FONT_NAME + "-Italic"}
 
@@ -241,34 +255,55 @@ def _do_wrap(text, max_width, break_pattern,
     return lines
 
 
-def _pack_fields(parts, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
-                 allow_dot_break=True, force_break_before=None):
+def _pack_fields(fields, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
+                 split_kinds=frozenset(), dot_break_kinds=frozenset(),
+                 force_break_before=None):
     """Greedily pack fields onto lines, joined with "; ".
 
-    A field is never split across lines. The only exception is a field that is
-    physically wider than the label on its own — that must wrap within itself,
-    since there is no other way to fit it.
+    ``fields`` is a list of ``(kind, text)`` pairs, where kind is one of the
+    field constants above. Kind drives the two concessions the layout ladder
+    hands out rung by rung:
 
-    ``force_break_before`` is an index into ``parts`` at which to start a new
+    ``split_kinds``      fields that may flow across a line break instead of
+                         being placed whole on a fresh line.
+    ``dot_break_kinds``  fields that may additionally break at "." — used to
+                         wrap dates and coordinates mid-value.
+
+    A field not named in ``split_kinds`` is never split, with one unavoidable
+    exception: a field physically wider than the label has nowhere else to go.
+
+    ``force_break_before`` is an index into ``fields`` at which to start a new
     line even if the field would otherwise fit on the current one. It is used to
     push the locality onto its own line after the geographic header.
     """
-    break_pattern = r"[. ]" if allow_dot_break else r" "
     lines = []
     current = ""
 
-    for i, raw in enumerate(parts):
+    for i, (kind, raw) in enumerate(fields):
         part = (raw or "").strip()
         if not part:
             continue
 
+        pattern = r"[. ]" if kind in dot_break_kinds else r" "
         forced = force_break_before is not None and i == force_break_before
+
+        if forced and current:
+            lines.append(current)
+            current = ""
+
+        if kind in split_kinds:
+            # Flowable: fill the rest of the current line and continue onto the
+            # next, rather than starting fresh. This is what buys back lines.
+            text = part if not current else current + "; " + part
+            sub = _do_wrap(text, max_width, pattern, font_name, font_size)
+            lines.extend(sub[:-1])
+            current = sub[-1] if sub else ""
+            continue
+
         candidate = part if not current else current + "; " + part
 
-        # Flush the current line if this field is forced onto a new line or it
-        # simply won't fit alongside what's already there.
-        if current and (forced or
-                        _text_width(candidate, font_name, font_size) > max_width):
+        # Flush the current line if this field won't fit alongside what's there.
+        if current and _text_width(candidate, font_name, font_size) > max_width:
             lines.append(current)
             current = ""
 
@@ -278,7 +313,7 @@ def _pack_fields(parts, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
             if _text_width(part, font_name, font_size) <= max_width:
                 current = part
             else:
-                sub = _do_wrap(part, max_width, break_pattern, font_name, font_size)
+                sub = _do_wrap(part, max_width, pattern, font_name, font_size)
                 lines.extend(sub[:-1])
                 current = sub[-1] if sub else ""
         else:
@@ -293,28 +328,131 @@ def _pack_fields(parts, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
     return lines
 
 
-def format_event(event, settings=None):
-    """Convert a collecting event dict to label lines."""
+def _rungs(locality_idx, allow_date_dot, allow_coord_dot):
+    """The layout ladder, in order of increasing concession.
+
+    Each rung is a kwargs dict for _pack_fields. The first rung whose result
+    fits within max_lines wins; if none do, the caller overflows onto a second
+    label using the last rung. Font size and label width are never touched —
+    those are the user's settings, not ours to adjust.
+    """
+    ladder = []
+
+    # 1. Prettiest: locality on its own line, every field intact.
+    if locality_idx is not None and locality_idx > 0:
+        ladder.append(dict(force_break_before=locality_idx))
+
+    # 2. Compact: greedy packing, every field still intact.
+    ladder.append(dict())
+
+    # 3. Let the wordy prose fields flow across line breaks. Technique is here
+    # because in practice it carries habitat description ("Malaise trap on edge
+    # of aspen stand and meadow"), not just a method name. Host is deliberately
+    # left out — it is a taxon name and should not wrap mid-binomial; letting it
+    # flow saved only one event in 180 and is not worth splitting a species.
+    flow = {LOCALITY, COLLECTORS, TECHNIQUE}
+    ladder.append(dict(split_kinds=set(flow)))
+
+    # 4. Break the date mid-value at a ".".
+    dots = set()
+    if allow_date_dot:
+        flow = flow | {DATE}
+        dots = dots | {DATE}
+        ladder.append(dict(split_kinds=set(flow), dot_break_kinds=set(dots)))
+
+    # 5. Break the coordinates mid-value at a ".".
+    if allow_coord_dot:
+        flow = flow | {COORDS}
+        dots = dots | {COORDS}
+        ladder.append(dict(split_kinds=set(flow), dot_break_kinds=set(dots)))
+
+    return ladder
+
+
+def _lay_out(fields, max_width, max_lines, locality_idx,
+             allow_date_dot, allow_coord_dot, font_name, font_size):
+    """Run the ladder. Returns a list of labels, each a list of lines.
+
+    Returns more than one label only when the content cannot be made to fit in
+    max_lines by any rung — the overflow spills onto a continuation label,
+    split on a field boundary so no value is cut in half.
+    """
+    cfg = dict(font_name=font_name, font_size=font_size)
+    ladder = _rungs(locality_idx, allow_date_dot, allow_coord_dot)
+
+    for rung in ladder:
+        lines = _pack_fields(fields, max_width, **cfg, **rung)
+        if len(lines) <= max_lines:
+            return [lines]
+
+    # Nothing fits. Keep the largest whole-field prefix that does, and push the
+    # rest onto a continuation label (which may itself overflow again).
+    #
+    # The prefix is laid out by recursing, not by reusing the last rung: with
+    # fewer fields to place it will often fit on an earlier, prettier rung, and
+    # there is no reason to break a date or coordinate on a label that had room
+    # anyway. Recursion terminates because k < len(fields) strictly shrinks it.
+    for k in range(len(fields) - 1, 0, -1):
+        head = _lay_out(fields[:k], max_width, max_lines,
+                        locality_idx if (locality_idx or 0) < k else None,
+                        allow_date_dot, allow_coord_dot, font_name, font_size)
+        if len(head) == 1:
+            tail = _lay_out(fields[k:], max_width, max_lines, None,
+                            allow_date_dot, allow_coord_dot, font_name, font_size)
+            return head + tail
+
+    # Degenerate: the very first field alone needs more than max_lines. There is
+    # no field boundary to split on, so break it by line instead.
+    lines = _pack_fields(fields, max_width, **cfg, **ladder[-1])
+    return [lines[i:i + max_lines] for i in range(0, len(lines), max_lines)]
+
+
+def _label_config(settings):
+    """Pull the layout knobs out of settings, applying defaults."""
     if settings:
         font_name = settings.get("font", FONT_NAME)
         font_size = settings.get("fontSize", FONT_SIZE)
         min_lines = settings.get("minLines", MIN_LINES)
         max_lines = settings.get("maxLines", MAX_LINES)
-        allow_dot_break = (
-            settings.get("allowDateDotBreak", True)
-            or settings.get("allowCoordDotBreak", True)
-        )
-        _ensure_font_registered(font_name)
+        # Two independent rungs of the ladder, not one blanket flag: each only
+        # ever loosens breaking for its own field kind.
+        allow_date_dot = settings.get("allowDateDotBreak", True)
+        allow_coord_dot = settings.get("allowCoordDotBreak", True)
+        date_format = settings.get("dateFormat", "roman")
         label_width_cm = settings.get("labelWidth", 1.76)
+        _ensure_font_registered(font_name)
     else:
         font_name = FONT_NAME
         font_size = FONT_SIZE
         min_lines = MIN_LINES
         max_lines = MAX_LINES
-        allow_dot_break = True
+        allow_date_dot = True
+        allow_coord_dot = True
+        date_format = "roman"
         label_width_cm = 1.76
-    label_width = label_width_cm * 28.3465 * 1.05  # cm to points, +5% width
 
+    if min_lines > max_lines:
+        min_lines = max_lines
+
+    return {
+        "font_name": font_name,
+        "font_size": font_size,
+        "min_lines": min_lines,
+        "max_lines": max_lines,
+        "allow_date_dot": allow_date_dot,
+        "allow_coord_dot": allow_coord_dot,
+        "date_format": date_format,
+        # cm to points, +5% width
+        "label_width": label_width_cm * 28.3465 * 1.05,
+    }
+
+
+def _build_fields(event, exclude_host=False, date_format="roman"):
+    """Convert a collecting event dict to a list of (kind, text) fields.
+
+    Returns (fields, locality_idx) — the index is where the forced
+    locality-on-its-own-line break goes, or None if there is no locality.
+    """
     # coordPrecision may be stored as a string (e.g. from form/JSON); coerce to
     # an int so the precision override actually applies. None / blank / invalid
     # falls back to the coordinate's own stored precision.
@@ -340,20 +478,20 @@ def format_event(event, settings=None):
         geo_parts.append(state)
     if county:
         geo_parts.append(county)
-    parts.extend(geo_parts)
+    parts.extend((GEO, g) for g in geo_parts)
 
     # Locality — remember its position so it can be pushed onto its own line.
     locality = event.get("locality", "")
     locality_idx = None
     if locality:
         locality_idx = len(parts)
-        parts.append(locality)
+        parts.append((LOCALITY, locality))
 
     # Elevation
     elev = event.get("elevation")
     if elev is not None:
         try:
-            parts.append(f"{int(elev)}m")
+            parts.append((ELEVATION, f"{int(elev)}m"))
         except (ValueError, TypeError):
             pass
 
@@ -376,7 +514,7 @@ def format_event(event, settings=None):
             lat_s = _coord_text(lat)
             lon_s = _coord_text(lon)
             coord_str = f"{lat_s} {lon_s}"
-            parts.append(coord_str)
+            parts.append((COORDS, coord_str))
         except (ValueError, TypeError):
             pass
 
@@ -386,82 +524,87 @@ def format_event(event, settings=None):
     created = event.get("createdAt")
 
     if start_dt and end_dt:
-        date_str = _format_date_range(start_dt, end_dt)
+        date_str = _format_date_range(start_dt, end_dt, date_format)
     else:
-        date_str = _format_date(created)
+        date_str = _format_date(created, date_format)
     if date_str:
-        parts.append(date_str)
+        parts.append((DATE, date_str))
 
     # Collectors
     collectors = event.get("collectors", [])
     if collectors:
         abbreviated = [_abbreviate_name(c) for c in collectors]
-        parts.append(", ".join(abbreviated))
+        parts.append((COLLECTORS, ", ".join(abbreviated)))
 
     # Collection technique
     technique = event.get("collectionTechnique")
     if technique:
-        parts.append(technique)
+        parts.append((TECHNIQUE, technique))
 
     # Host (last field) — optionally excluded for split-label mode
-    exclude_host = settings.get("_exclude_host", False) if settings else False
     host = event.get("host")
     if host and not exclude_host:
-        parts.append(host)
+        parts.append((HOST, host))
 
-    pack_args = dict(font_name=font_name, font_size=font_size,
-                     allow_dot_break=allow_dot_break)
+    return parts, locality_idx
 
-    # Compact greedy packing (fields never split across lines).
-    greedy_lines = _pack_fields(parts, label_width, **pack_args)
 
-    # Rule: put the locality on its own line (line 2, right after the geographic
-    # header) — but only when a header actually precedes it and the forced break
-    # keeps the label within max_lines. If honouring it would spill onto an
-    # extra line, fall back to the compact greedy layout. Field integrity is
-    # independent of this: _pack_fields never splits a field either way.
-    if locality_idx is not None and locality_idx > 0:
-        forced_lines = _pack_fields(parts, label_width,
-                                    force_break_before=locality_idx, **pack_args)
-        lines = forced_lines if len(forced_lines) <= max_lines else greedy_lines
-    else:
-        lines = greedy_lines
+def format_event(event, settings=None):
+    """Convert a collecting event dict to the lines of its first label.
+
+    Kept for callers that only ever want one label. Use format_event_labels to
+    get the continuation labels an overflowing event produces.
+    """
+    return format_event_all_labels(event, settings)[0]
+
+
+def format_event_all_labels(event, settings=None, exclude_host=False):
+    """Lay an event out, returning a list of labels (each a list of lines)."""
+    cfg = _label_config(settings)
+    fields, locality_idx = _build_fields(
+        event, exclude_host=exclude_host, date_format=cfg["date_format"])
+
+    labels = _lay_out(fields, cfg["label_width"], cfg["max_lines"], locality_idx,
+                      cfg["allow_date_dot"], cfg["allow_coord_dot"],
+                      cfg["font_name"], cfg["font_size"])
 
     # Keep a minimum physical label height for easier cutting/handling.
-    while len(lines) < min_lines:
-        lines.append("")
+    for lines in labels:
+        while len(lines) < cfg["min_lines"]:
+            lines.append("")
 
-    return lines
+    return labels
 
 
 def format_event_labels(event, qty, settings=None):
     """Return a list of (lines, qty) tuples for one event.
 
-    Normally returns one entry.  When splitHostLabel is enabled and the
-    event has host data, returns two: the main label and a host-only label.
+    Usually one entry. More than one when the event needs it:
+
+    * splitHostLabel is on and the event has a host — the host is moved to its
+      own label even if it would have fit, and
+    * the remaining content still cannot be squeezed into maxLines, in which
+      case it overflows onto continuation labels.
+
+    Both can happen at once, so this may return three or more labels.
     """
     split = settings.get("splitHostLabel", False) if settings else False
     host = event.get("host")
 
     if split and host:
-        # Main label without host
-        split_settings = dict(settings, _exclude_host=True) if settings else {"_exclude_host": True}
-        main_lines = format_event(event, split_settings)
+        # Host moved off by request. The main label may still overflow on its
+        # own, so it goes through the same ladder.
+        labels = format_event_all_labels(event, settings, exclude_host=True)
 
-        # Host-only label
-        font_name = settings.get("font", FONT_NAME) if settings else FONT_NAME
-        font_size = settings.get("fontSize", FONT_SIZE) if settings else FONT_SIZE
-        min_lines = settings.get("minLines", MIN_LINES) if settings else MIN_LINES
-        max_lines = settings.get("maxLines", MAX_LINES) if settings else MAX_LINES
-        label_width_cm = settings.get("labelWidth", 1.76) if settings else 1.76
-        label_width = label_width_cm * 28.3465 * 1.05  # +5% width
-        _ensure_font_registered(font_name)
+        cfg = _label_config(settings)
+        host_labels = _lay_out([(HOST, host)], cfg["label_width"],
+                               cfg["max_lines"], None,
+                               cfg["allow_date_dot"], cfg["allow_coord_dot"],
+                               cfg["font_name"], cfg["font_size"])
+        for lines in host_labels:
+            while len(lines) < cfg["min_lines"]:
+                lines.append("")
 
-        host_lines = _pack_fields([host], label_width,
-                                  font_name=font_name, font_size=font_size)
-        while len(host_lines) < min_lines:
-            host_lines.append("")
+        return [(lines, qty) for lines in labels + host_labels]
 
-        return [(main_lines, qty), (host_lines, qty)]
-
-    return [(format_event(event, settings), qty)]
+    return [(lines, qty) for lines in format_event_all_labels(event, settings)]

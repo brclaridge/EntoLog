@@ -13,6 +13,7 @@
             <a href="{{ url_for('new_event') }}" class="btn btn-new">+ New Event</a>
             <form method="POST" action="{{ url_for('sync_phone') }}" class="sync-form">
                 <input type="text" name="phone_ip" placeholder="Phone IP:port" class="sync-input" id="phone-ip-input">
+                <input type="text" name="phone_token" placeholder="4-digit code" class="sync-input" id="phone-token-input" inputmode="numeric" maxlength="4" style="width: 90px;">
                 <button type="submit" class="btn btn-sync">Sync Phone</button>
             </form>
             <button type="button" class="btn btn-settings" onclick="openSettingsModal()">Settings</button>
@@ -139,7 +140,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -183,6 +184,7 @@
                                 data-created="{{ (item.event.createdAt or '')[:10] }}"
                                 data-start="{{ (item.event.startDateTime or '')[:10] }}"
                                 data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-trap="{{ '1' if (item.event.isTrapSample if item.event.isTrapSample is defined else (item.event.startDateTime and item.event.endDateTime)) else '' }}"
                                 data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
                                 data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
                         <button type="button" class="btn-sm btn-del"
@@ -236,7 +238,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -280,6 +282,7 @@
                                 data-created="{{ (item.event.createdAt or '')[:10] }}"
                                 data-start="{{ (item.event.startDateTime or '')[:10] }}"
                                 data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-trap="{{ '1' if (item.event.isTrapSample if item.event.isTrapSample is defined else (item.event.startDateTime and item.event.endDateTime)) else '' }}"
                                 data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
                                 data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
                         <button type="button" class="btn-sm btn-del"
@@ -334,7 +337,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -378,6 +381,7 @@
                                 data-created="{{ (item.event.createdAt or '')[:10] }}"
                                 data-start="{{ (item.event.startDateTime or '')[:10] }}"
                                 data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-trap="{{ '1' if (item.event.isTrapSample if item.event.isTrapSample is defined else (item.event.startDateTime and item.event.endDateTime)) else '' }}"
                                 data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
                                 data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
                         <button type="button" class="btn-sm btn-del"
@@ -432,7 +436,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td>{{ item.event.collectionCode or "" }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -476,6 +480,7 @@
                                 data-created="{{ (item.event.createdAt or '')[:10] }}"
                                 data-start="{{ (item.event.startDateTime or '')[:10] }}"
                                 data-end="{{ (item.event.endDateTime or '')[:10] }}"
+                                data-trap="{{ '1' if (item.event.isTrapSample if item.event.isTrapSample is defined else (item.event.startDateTime and item.event.endDateTime)) else '' }}"
                                 data-collectors="{{ (item.event.collectors or [])|join(', ') }}"
                                 data-technique="{{ item.event.collectionTechnique or '' }}">Dup</button>
                         <button type="button" class="btn-sm btn-del"
@@ -858,6 +863,8 @@
                             <option value="7">7</option>
                         </select>
                     </label>
+                    <p class="settings-hint">Never exceeded. An event that will not fit
+                        continues onto a second label rather than growing past this.</p>
                 </div>
                 <div class="settings-row">
                     <label class="settings-label">Label Width (cm)
@@ -934,8 +941,15 @@
             html += '</dl>';
             document.getElementById('dup-modal-info').innerHTML = html;
             document.getElementById('dup-createdAt').value = btn.dataset.created || '';
-            document.getElementById('dup-startDateTime').value = btn.dataset.start || '';
-            document.getElementById('dup-endDateTime').value = btn.dataset.end || '';
+            if (btn.dataset.trap) {
+                // Next sample from the same trap starts when the last one ended.
+                document.getElementById('dup-createdAt').value = '';
+                document.getElementById('dup-startDateTime').value = btn.dataset.end || btn.dataset.start || '';
+                document.getElementById('dup-endDateTime').value = '';
+            } else {
+                document.getElementById('dup-startDateTime').value = btn.dataset.start || '';
+                document.getElementById('dup-endDateTime').value = btn.dataset.end || '';
+            }
             document.getElementById('dup-modal').style.display = 'flex';
         }
 
@@ -1074,14 +1088,20 @@
             if (e.key === 'Escape') { closeDupModal(); closeDeleteModal(); closeSettingsModal(); }
         });
 
-        /* Remember phone IP */
+        /* Remember phone IP and pairing code */
         (function () {
             var ipInput = document.getElementById('phone-ip-input');
+            var tokenInput = document.getElementById('phone-token-input');
             if (!ipInput) return;
-            var saved = localStorage.getItem('fieldcollect.phone_ip');
-            if (saved) ipInput.value = saved;
+            var savedIp = localStorage.getItem('fieldcollect.phone_ip');
+            if (savedIp) ipInput.value = savedIp;
+            if (tokenInput) {
+                var savedToken = localStorage.getItem('fieldcollect.phone_token');
+                if (savedToken) tokenInput.value = savedToken;
+            }
             ipInput.closest('form').addEventListener('submit', function () {
                 localStorage.setItem('fieldcollect.phone_ip', ipInput.value);
+                if (tokenInput) localStorage.setItem('fieldcollect.phone_token', tokenInput.value);
             });
         })();
     </script>

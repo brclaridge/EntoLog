@@ -8,7 +8,9 @@
     --muted: #97ada0;
     --panel: #161e19;
     --panel-border: #243028;
-    --input-bg: #111815;
+    --input-bg: #0c100e;
+    --input-border: #3c5245;
+    --input-shadow: rgba(0, 0, 0, 0.35);
     --brand: #5dba61;
     --brand-dark: #43a047;
     --brand-glow: rgba(93, 186, 97, 0.15);
@@ -17,6 +19,14 @@
     --danger: #f06260;
     --danger-dark: #d44442;
     --focus-ring: 0 0 0 2px rgba(93, 186, 97, 0.35);
+    /* Form-only design layer: a second surface tier (nested fieldsets sit
+       visibly above the form panel) and a warm accent reserved for section
+       tags/structure, kept distinct from --brand which stays for actions. */
+    --surface-2: #1e2721;
+    --surface-2-border: #34473c;
+    --accent-warm: #d99a4e;
+    --accent-warm-soft: rgba(217, 154, 78, 0.14);
+    --accent-warm-border: rgba(217, 154, 78, 0.4);
 }
 
 * {
@@ -94,11 +104,12 @@ h1 {
     width: 100%;
     margin-top: 4px;
     padding: 9px 12px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
     font-size: 15px;
     background: var(--input-bg);
     color: var(--ink-bright);
+    box-shadow: inset 0 1px 2px var(--input-shadow);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -125,11 +136,12 @@ h1 {
     display: block;
     margin-top: 4px;
     padding: 8px 9px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
     background: var(--input-bg);
     color: var(--ink);
     font-size: 15px;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
 }
 
 .toolbar-sort select:focus {
@@ -238,7 +250,14 @@ h1 {
     border: 1px solid #1a4025;
 }
 
-.btn-dup:hover {
+.btn-dup-event {
+    background: #102818;
+    color: #6bc97e;
+    border: 1px solid #1a4025;
+}
+
+.btn-dup:hover,
+.btn-dup-event:hover {
     background: #26803a;
     color: white;
     border-color: #26803a;
@@ -297,10 +316,11 @@ h1 {
 
 .coord-select {
     padding: 4px 6px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 4px;
     background: var(--input-bg);
     color: var(--ink);
+    box-shadow: inset 0 1px 2px var(--input-shadow);
 }
 
 /* ── Table ── */
@@ -396,12 +416,13 @@ td:nth-child(14), th:nth-child(14) { width: 1%; white-space: nowrap; }
 .qty-input {
     width: 58px;
     padding: 5px 2px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 3px;
     text-align: center;
     background: var(--input-bg);
     color: var(--ink);
     font-size: 16px;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
 }
 
 .qty-input:focus {
@@ -477,13 +498,57 @@ td:nth-child(14), th:nth-child(14) { width: 1%; white-space: nowrap; }
 }
 
 /* ── Event form ── */
+.page-title {
+    position: relative;
+    padding-bottom: 12px;
+}
+
+.page-title::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 46px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent-warm);
+}
+
 .event-form {
     background: var(--panel);
     border: 1px solid var(--panel-border);
-    padding: 24px 28px;
-    border-radius: 8px;
-    max-width: 800px;
+    padding: 28px 32px;
+    border-radius: 10px;
+    max-width: 1180px;
     margin: 0 auto;
+}
+
+/* Two-column layout for the main sections — cuts vertical scroll roughly in
+   half on anything wider than a tablet. Collapses to one column below. */
+.event-form-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+    align-items: start;
+    margin-bottom: 16px;
+}
+
+.event-form-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+
+.event-form-col > fieldset {
+    margin-bottom: 0;
+}
+
+@media (max-width: 920px) {
+    .event-form-columns {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
 }
 
 fieldset {
@@ -500,6 +565,42 @@ legend {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 6px;
+}
+
+/* Fieldsets inside the event form get a visibly distinct surface tier —
+   the flat single-tone dark panel was the main complaint — plus a "specimen
+   tag" style legend in the warm accent, so each section reads as its own
+   labeled block instead of blending into one wall of near-black. */
+.event-form fieldset {
+    border: 1px solid var(--surface-2-border);
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+}
+
+.event-form-col > fieldset {
+    margin-bottom: 0;
+}
+
+.event-form legend {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--accent-warm);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 9px;
+    background: var(--accent-warm-soft);
+    border: 1px solid var(--accent-warm-border);
+    border-radius: 4px;
+}
+
+.event-form legend small {
+    color: var(--accent-warm);
+    opacity: 0.85;
+    text-transform: none;
+    letter-spacing: normal;
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
 }
 
 .form-row {
@@ -536,8 +637,76 @@ legend {
     margin-bottom: 0;
 }
 
-.coord-alt-fieldset {
-    margin-top: 8px;
+/* Alternate coordinate entry (DMS / DM) is used rarely — collapsed behind a
+   disclosure by default instead of always eating ~400px of vertical space. */
+.coord-alt-details {
+    margin-top: 12px;
+    border: 1px solid var(--surface-2-border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--panel);
+}
+
+.coord-alt-details summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 11px 15px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+
+.coord-alt-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.coord-alt-details summary::marker {
+    content: "";
+}
+
+.coord-alt-details summary::before {
+    content: "▸";
+    display: inline-block;
+    font-size: 11px;
+    color: var(--accent-warm);
+    transition: transform 0.15s ease;
+}
+
+.coord-alt-details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.coord-alt-details[open] summary {
+    border-bottom: 1px solid var(--surface-2-border);
+}
+
+.coord-alt-block {
+    padding: 14px 16px 6px;
+}
+
+.coord-alt-block:last-child {
+    padding-bottom: 16px;
+}
+
+.coord-alt-block + .coord-alt-block {
+    border-top: 1px solid var(--surface-2-border);
+    margin-top: 2px;
+    padding-top: 14px;
+}
+
+.coord-alt-heading {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
 }
 
 .coord-alt-grid {
@@ -547,15 +716,47 @@ legend {
     margin-bottom: 0;
 }
 
+.coord-alt-grid-6 {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.coord-alt-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .coord-alt-grid label {
     min-width: 0;
+    font-size: 10px;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
 }
 
 .form-row label {
     flex: 1;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13.8px;
+    font-weight: 600;
     color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.045em;
+}
+
+.form-row label small {
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 500;
+    opacity: 0.8;
+}
+
+/* text-transform and font-weight inherit by default; native <input>/<select>
+   controls don't pick them up from an ancestor label in most browsers, but
+   the contenteditable .rich-input divs are plain elements and would
+   otherwise render (and let you type) in shouting, bold caps just because
+   they live inside the uppercase, semibold field-name label. */
+.form-row label input,
+.form-row label select,
+.form-row label .rich-input {
+    text-transform: none;
+    font-weight: 400;
 }
 
 .form-row.three-col label { flex: 1; }
@@ -570,13 +771,14 @@ legend {
 .form-row select {
     display: block;
     width: 100%;
-    padding: 9px 11px;
+    padding: 10px 12px;
     margin-top: 4px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
-    font-size: 16px;
+    font-size: 17px;
     background: var(--input-bg);
     color: var(--ink-bright);
+    box-shadow: inset 0 1px 2px var(--input-shadow);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -593,14 +795,15 @@ legend {
 
 textarea {
     width: 100%;
-    padding: 9px 11px;
-    border: 1px solid var(--panel-border);
+    padding: 10px 12px;
+    border: 1px solid var(--input-border);
     border-radius: 5px;
-    font-size: 16px;
+    font-size: 17px;
     resize: vertical;
     background: var(--input-bg);
     color: var(--ink-bright);
     font-family: inherit;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -614,6 +817,10 @@ textarea:focus {
     display: flex;
     gap: 8px;
     margin-top: 6px;
+}
+
+.form-actions .btn-danger {
+    margin-left: auto;
 }
 
 @media (max-width: 600px) {
@@ -632,16 +839,17 @@ textarea:focus {
 .rich-input {
     display: block;
     width: 100%;
-    padding: 9px 11px;
+    padding: 10px 12px;
     margin-top: 4px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
-    font-size: 16px;
+    font-size: 17px;
     background: var(--input-bg);
     color: var(--ink-bright);
     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     min-height: 38px;
     outline: none;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     white-space: nowrap;
     overflow: hidden;
@@ -667,14 +875,33 @@ textarea:focus {
 .form-row .ac-wrap .rich-input {
     margin-top: 0;
     background: transparent;
+    border: none;
+    box-shadow: none;
     position: relative;
     z-index: 1;
 }
 
-/* ── Ghost autocomplete ── */
+/* ── Ghost autocomplete ──
+   Fields with a datalist (Country, State, County, Locality, Collectors,
+   Technique, the date fields) get wrapped in this box by JS so a dimmed
+   suggestion can render in the same cell, underneath the real input. The
+   real input/rich-input has a transparent fill so the ghost text can show
+   through past the cursor — so the WRAPPER, not the input, has to carry the
+   visible field chrome (bg/border/shadow), or these fields silently lose
+   their input-well styling and blend into the surrounding fieldset. */
 .ac-wrap {
     display: grid;
-    margin-top: 3px;
+    margin-top: 4px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 5px;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ac-wrap:focus-within {
+    border-color: var(--brand);
+    box-shadow: var(--focus-ring);
 }
 
 .ac-wrap > * {
@@ -684,15 +911,17 @@ textarea:focus {
 .form-row .ac-wrap input {
     margin-top: 0;
     background: transparent;
+    border: none;
+    box-shadow: none;
     position: relative;
     z-index: 1;
 }
 
 .ac-ghost {
-    padding: 7px 9px;
+    padding: 10px 12px;
     border: 1px solid transparent;
     border-radius: 5px;
-    font-size: 14px;
+    font-size: 17px;
     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     color: #2e4236;
     pointer-events: none;
@@ -781,12 +1010,13 @@ textarea:focus {
     width: 100%;
     padding: 7px 9px;
     margin-top: 4px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
     font-size: 15px;
     font-family: inherit;
     background: var(--input-bg);
     color: var(--ink-bright);
+    box-shadow: inset 0 1px 2px var(--input-shadow);
 }
 
 .modal-field input:focus {
@@ -866,22 +1096,41 @@ textarea:focus {
     color: var(--ink);
 }
 
+.settings-hint {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+}
+
 .settings-select {
     display: block;
     width: 100%;
     margin-top: 4px;
     padding: 8px 10px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
     background: var(--input-bg);
     color: var(--ink-bright);
     font-size: 15px;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
 }
 
 .settings-select:focus {
     outline: none;
     border-color: var(--brand);
     box-shadow: var(--focus-ring);
+}
+
+.event-form .trap-only { display: none; }
+.event-form.is-trap .trap-only { display: block; }
+.event-form.is-trap .general-only { display: none; }
+.trap-toggle { margin-bottom: 8px; }
+.event-form input[readonly] {
+    color: var(--muted);
+    background: transparent;
+    border-style: dashed;
+    cursor: default;
 }
 
 .settings-checkbox-label {
@@ -906,12 +1155,13 @@ textarea:focus {
 
 .sync-input {
     padding: 9px 12px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--input-border);
     border-radius: 5px;
     font-size: 15px;
     background: var(--input-bg);
     color: var(--ink-bright);
     width: 160px;
+    box-shadow: inset 0 1px 2px var(--input-shadow);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -950,14 +1200,15 @@ textarea:focus {
 
 /* ── Photo thumbnail grid (event form) ── */
 .photo-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
 }
 
 .photo-thumb {
-    width: 120px;
-    height: 90px;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    height: auto;
     object-fit: cover;
     border-radius: 5px;
     border: 1px solid var(--panel-border);
@@ -967,7 +1218,7 @@ textarea:focus {
 
 .photo-thumb:hover {
     border-color: var(--brand);
-    transform: scale(1.04);
+    transform: scale(1.02);
 }
 
 /* ── Lightbox ── */
