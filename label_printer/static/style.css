@@ -813,6 +813,102 @@ textarea:focus {
     box-shadow: var(--focus-ring);
 }
 
+.date-partial-warn {
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 13px;
+    color: #e0b84a;
+    background: rgba(201, 162, 39, 0.12);
+    border: 1px solid #5a4a14;
+}
+
+/* Line-count badge in the list's Event ID cell */
+.fit-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    vertical-align: middle;
+    border: 1px solid transparent;
+}
+.fit-ok   { color: #6bc97e; border-color: #1a4025; }
+.fit-full { color: #e0b84a; border-color: #5a4a14; }
+.fit-over { color: #fff; background: #c0392b; }
+
+/* ── Live label preview ── */
+.label-preview {
+    position: sticky;
+    bottom: 8px;
+    z-index: 5;
+    margin: 10px 0 8px;
+    padding: 8px 10px;
+    background: var(--panel, #fff);
+    border: 1px solid var(--panel-border);
+    border-left: 4px solid var(--panel-border);
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.label-preview.ok   { border-left-color: #26803a; }
+.label-preview.full { border-left-color: #c9a227; }
+.label-preview.over { border-left-color: #c0392b; }
+.label-preview-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.045em;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+.label-preview.ok .label-preview-status   { color: #6bc97e; }
+.label-preview.full .label-preview-status { color: #e0b84a; }
+.label-preview.over .label-preview-status { color: #ff7b6b; }
+.label-preview-status { text-transform: none; letter-spacing: normal; }
+.label-preview-opts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.label-preview-opts select { margin-left: 6px; width: auto; }
+.label-preview-opts .settings-checkbox-label { font-size: 13px; }
+
+.label-preview-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.label-preview-slip {
+    /* Lines are already wrapped server-side to the real label width;
+       this only displays them, so never re-wrap. */
+    white-space: pre;
+    font-family: "Liberation Sans Narrow", "Arial Narrow", sans-serif;
+    font-size: 13px;
+    line-height: 1.2;
+    color: #111;
+    background: #fdfdf8;
+    padding: 6px 8px;
+    border: 1px dashed #999;
+    border-radius: 2px;
+    max-width: 100%;
+    overflow-x: auto;
+}
+.label-preview-tag {
+    font-family: inherit;
+    font-size: 10px;
+    color: #c0392b;
+    margin-bottom: 2px;
+}
+
 .form-actions {
     display: flex;
     gap: 8px;

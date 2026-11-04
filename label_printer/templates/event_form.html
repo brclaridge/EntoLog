@@ -179,22 +179,23 @@
                 <label class="general-only">Event Date
                     <input type="text" name="createdAt" class="date-auto"
                            value="{{ event.createdAt[:10] if event and event.createdAt else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           placeholder="YYYY-MM-DD" pattern="\d{4}(-\d{2}(-\d{2})?)?" title="YYYY-MM-DD; YYYY-MM or YYYY if the day is unknown"
                            data-list="date-options" autocomplete="off">
                 </label>
                 <label>Start Date
                     <input type="text" name="startDateTime" class="date-auto"
                            value="{{ event.startDateTime[:10] if event and event.startDateTime else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           placeholder="YYYY-MM-DD" pattern="\d{4}(-\d{2}(-\d{2})?)?" title="YYYY-MM-DD; YYYY-MM or YYYY if the day is unknown"
                            data-list="date-options" autocomplete="off">
                 </label>
                 <label>End Date
                     <input type="text" name="endDateTime" class="date-auto"
                            value="{{ event.endDateTime[:10] if event and event.endDateTime else '' }}"
-                           placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                           placeholder="YYYY-MM-DD" pattern="\d{4}(-\d{2}(-\d{2})?)?" title="YYYY-MM-DD; YYYY-MM or YYYY if the day is unknown"
                            data-list="date-options" autocomplete="off">
                 </label>
             </div>
+            <div class="date-partial-warn" id="date-partial-warn" hidden></div>
             <div class="form-row">
                 <label>Collectors <small>(comma-separated)</small>
                     <input type="text" name="collectors"
@@ -244,6 +245,38 @@
         </fieldset>
         {% endif %}
 
+        <div class="label-preview" id="label-preview" aria-live="polite">
+            <div class="label-preview-head">
+                <span>Label preview</span>
+                <span class="label-preview-status" id="label-preview-status"></span>
+            </div>
+            {% set layout = (event.labelLayout if event and event.labelLayout else {}) %}
+            <div class="label-preview-opts" title="For this event only; saved with the event. Each option is only used if the label doesn't fit without it.">
+                <label>Lines
+                    <select name="labelMaxLines">
+                        <option value="">Default ({{ default_max_lines }})</option>
+                        {% for n in [4, 5, 6, 7, 8] %}
+                        <option value="{{ n }}" {{ "selected" if layout.maxLines == n else "" }}>{{ n }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <span class="label-preview-optlabel">Allow, in this order:</span>
+                {% for opt in layout_options %}
+                <label class="settings-checkbox-label" title="e.g. {{ opt.example }}">
+                    {% if opt.global_on %}
+                    <input type="checkbox" checked disabled>
+                    {{ opt.label }} <small class="muted">(on in Settings)</small>
+                    {% else %}
+                    <input type="checkbox" name="layout_{{ opt.key }}" value="1"
+                           {{ "checked" if layout.get(opt.key) or layout.breakFields else "" }}>
+                    {{ opt.label }} <small class="muted">{{ opt.example }}</small>
+                    {% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            <div class="label-preview-body" id="label-preview-body"></div>
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="btn btn-generate">Save &amp; Sync to Drive</button>
             <a href="{{ list_url() }}" class="btn btn-cancel">{{ "Back to List" if event else "Cancel" }}</a>
@@ -272,8 +305,9 @@
             var copied = {{ "true" if copied else "false" }};
 
             function yymmdd(v) {
-                var m = /^(\d{2})(\d{2})-(\d{2})-(\d{2})/.exec((v || '').trim());
-                return m ? m[2] + m[3] + m[4] : '';
+                var m = /^(\d{2})(\d{2})-(\d{2})(?:-(\d{2}))?$/.exec((v || '').trim().slice(0, 10));
+                if (!m) return '';
+                return m[2] + m[3] + (m[4] || '');
             }
             function trapId() {
                 var code = trapCode.value.trim(), end = yymmdd(endDate.value);
@@ -281,7 +315,7 @@
             }
             function generalId() {
                 var prefix = yymmdd(created.value);
-                if (!prefix) return '';
+                if (prefix.length !== 6) return '';
                 var n = 0;
                 generalIds.forEach(function (id) {
                     if (id.slice(0, 6) === prefix) n = Math.max(n, parseInt(id.slice(7), 10));
@@ -335,6 +369,89 @@
             form.addEventListener('submit', refreshId);
             applyMode();
             refreshId();
+        })();
+    </script>
+
+    <script>
+        /* Partial dates (day or month unknown) are allowed; say so plainly. */
+        (function () {
+            var form = document.querySelector('.event-form');
+            var warn = document.getElementById('date-partial-warn');
+            var names = { createdAt: 'Event date', startDateTime: 'Start date', endDateTime: 'End date' };
+            function check() {
+                var msgs = [];
+                Object.keys(names).forEach(function (n) {
+                    var el = form.querySelector('[name="' + n + '"]');
+                    if (!el || el.disabled) return;
+                    var v = el.value.trim();
+                    if (/^\d{4}-\d{2}$/.test(v)) msgs.push(names[n] + ': day unknown');
+                    else if (/^\d{4}$/.test(v)) msgs.push(names[n] + ': month and day unknown');
+                });
+                warn.hidden = !msgs.length;
+                warn.textContent = msgs.length
+                    ? '\u26A0 ' + msgs.join(' \u00B7 ') + ' \u2014 the label will show only what is known (e.g. viii.2024).'
+                    : '';
+            }
+            form.addEventListener('input', function () { setTimeout(check, 0); });
+            form.addEventListener('change', check);
+            check();
+        })();
+    </script>
+
+    <script>
+        /* Live label preview: lays the form out server-side with the same code
+           that prints, and flags when it runs past the line limit. */
+        (function () {
+            var form = document.querySelector('.event-form');
+            var body = document.getElementById('label-preview-body');
+            var status = document.getElementById('label-preview-status');
+            var box = document.getElementById('label-preview');
+            var timer = null, seq = 0;
+
+            function esc(t) {
+                return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+            function lineHtml(line) {
+                // *...* marks italics, as on the printed label.
+                return esc(line).split('*').map(function (part, i) {
+                    return i % 2 ? '<i>' + part + '</i>' : part;
+                }).join('') || '&nbsp;';
+            }
+            function render(data) {
+                if (data.errors && data.errors.length) {
+                    status.textContent = data.errors[0];
+                    box.className = 'label-preview';
+                    return;
+                }
+                var n = data.labels.length, max = data.maxLines;
+                body.innerHTML = data.labels.map(function (lines, i) {
+                    return '<div class="label-preview-slip">' +
+                        (n > 1 ? '<div class="label-preview-tag">' + (i + 1) + ' of ' + n + '</div>' : '') +
+                        lines.map(function (l) { return '<div>' + lineHtml(l) + '</div>'; }).join('') +
+                        '</div>';
+                }).join('');
+                if (n > 1) {
+                    status.textContent = data.contentLines + ' lines — over the ' + max +
+                        '-line limit, prints as ' + n + ' labels';
+                    box.className = 'label-preview over';
+                } else {
+                    var used = data.contentLines;
+                    status.textContent = used + ' / ' + max + ' lines';
+                    box.className = 'label-preview' + (used >= max ? ' full' : ' ok');
+                }
+            }
+            function refresh() {
+                if (window._syncRichInputs) window._syncRichInputs();
+                var mine = ++seq;
+                fetch('{{ url_for("api_label_preview") }}', { method: 'POST', body: new FormData(form) })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { if (mine === seq) render(data); })
+                    .catch(function () { status.textContent = 'Preview unavailable'; });
+            }
+            function schedule() { clearTimeout(timer); timer = setTimeout(refresh, 350); }
+            form.addEventListener('input', schedule);
+            form.addEventListener('change', schedule);
+            refresh();
         })();
     </script>
 
@@ -629,13 +746,15 @@
                 });
             });
 
-            form.addEventListener("submit", function () {
+            function syncRichInputs() {
                 form.querySelectorAll(".rich-input").forEach(function (div) {
                     var fieldName = div.getAttribute("data-field");
                     var hidden = form.querySelector("input[name='" + fieldName + "']");
                     if (hidden) hidden.value = htmlToMd(div.innerHTML);
                 });
-            });
+            }
+            window._syncRichInputs = syncRichInputs;
+            form.addEventListener("submit", syncRichInputs);
         })();
     </script>
     <script>

@@ -19,6 +19,16 @@ def _parse_datetime(value):
         return None
     v = value.strip()
 
+    # Partial dates — day (or month) unknown, common for trap samples run by
+    # someone else. Kept as "YYYY-MM" / "YYYY"; labels print viii.2024 / 2024.
+    m = re.match(r"^(\d{4})(?:-(\d{1,2}))?$", v)
+    if m:
+        if m.group(2) is None:
+            return m.group(1)
+        if 1 <= int(m.group(2)) <= 12:
+            return f"{m.group(1)}-{int(m.group(2)):02d}"
+        return None
+
     # If already a YYYY-MM-DD, accept as-is
     try:
         d = date.fromisoformat(v)
@@ -310,8 +320,11 @@ _GENERAL_ID_RE = re.compile(r"^(\d{6})-(\d{3})$")
 
 
 def _yymmdd(iso_value):
-    """'2026-08-26' (or a longer ISO datetime) -> '260826'; '' if unusable."""
+    """'2026-08-26' (or a longer ISO datetime) -> '260826'; '' if unusable.
+    A month-only date gives YYMM ('2024-08' -> '2408')."""
     v = (iso_value or "")[:10]
+    if len(v) == 7 and v[4] == "-":
+        return v[2:4] + v[5:7]
     if len(v) != 10 or v[4] != "-" or v[7] != "-":
         return ""
     return v[2:4] + v[5:7] + v[8:10]
@@ -329,7 +342,7 @@ def _trap_event_id(trap_code, end_iso):
 def _next_general_id(date_iso, exclude_uuid=None):
     """Next free YYMMDD-NNN for a one-day event on this date."""
     prefix = _yymmdd(date_iso)
-    if not prefix:
+    if len(prefix) != 6:
         return ""
     used = 0
     for e in _cached_events or []:
@@ -502,7 +515,22 @@ def _list_url():
 
 @app.context_processor
 def _inject_list_url():
-    return {"list_url": _list_url, "list_event_id": _list_event_id}
+    return {"list_url": _list_url, "list_event_id": _list_event_id, "label_fit": _label_fit}
+
+
+def _label_fit(event):
+    """Line usage for the list's badge: how many printed lines the event takes
+    against its line limit, and how many labels it spills onto."""
+    import label_formatter
+    settings = load_settings()
+    try:
+        labels = [lines for lines, _q in format_event_labels(event, 1, settings)]
+        limit = int(label_formatter.event_settings(event, settings).get("maxLines") or 0)
+    except Exception:
+        return None
+    used = sum(1 for lines in labels for ln in lines if ln.strip())
+    state = "over" if len(labels) > 1 else ("full" if used >= limit else "ok")
+    return {"labels": len(labels), "lines": used, "max": limit, "state": state}
 
 
 def _list_event_id(event):
@@ -650,6 +678,7 @@ def new_event():
         photos=[],
         is_trap=False,
         copied=False,
+        **_layout_template_args(),
         general_ids=_general_ids(),
         technique_options=suggestions["techniques"],
         collector_options=suggestions["collectors"],
@@ -681,6 +710,7 @@ def edit_event(idx):
         idx=idx,
         photos=photos,
         is_trap=_is_trap_sample(event),
+        **_layout_template_args(),
         copied=request.args.get("copied") == "1",
         general_ids=_general_ids(exclude_uuid=event.get("uuid")),
         technique_options=suggestions["techniques"],
@@ -721,40 +751,27 @@ def fetch_inat_observation():
         return jsonify({"error": "Unexpected error while fetching observation"}), 500
 
 
-@app.route("/event/save", methods=["POST"])
-def save_event():
-    global _cached_events
-    if _cached_events is None:
-        _load_events()
+def _event_from_form(form, save_as_copy=False):
+    """Build an event dict from the edit form. Returns (event, errors); event is
+    None when errors is non-empty. Shared by save and the live label preview."""
+    qty_str = form.get("labelQuantity", "").strip()
+    lat_str = form.get("latitude", "").strip()
+    lon_str = form.get("longitude", "").strip()
 
-    idx = request.form.get("idx")
-    # "Duplicate" on the edit page submits the form as it stands; the copy
-    # gets a fresh uuid and the original stays as last saved.
-    save_as_copy = request.form.get("saveAsCopy") == "1"
-    source_idx = idx
-    if save_as_copy:
-        idx = None
-    is_edit = idx is not None and idx != ""
-
-    # Build event dict from form
-    qty_str = request.form.get("labelQuantity", "").strip()
-    lat_str = request.form.get("latitude", "").strip()
-    lon_str = request.form.get("longitude", "").strip()
-
-    lat_dms_deg = request.form.get("lat_dms_deg", "")
-    lat_dms_min = request.form.get("lat_dms_min", "")
-    lat_dms_sec = request.form.get("lat_dms_sec", "")
-    lat_dms_dir = request.form.get("lat_dms_dir", "")
-    lon_dms_deg = request.form.get("lon_dms_deg", "")
-    lon_dms_min = request.form.get("lon_dms_min", "")
-    lon_dms_sec = request.form.get("lon_dms_sec", "")
-    lon_dms_dir = request.form.get("lon_dms_dir", "")
-    lat_dm_deg = request.form.get("lat_dm_deg", "")
-    lat_dm_min = request.form.get("lat_dm_min", "")
-    lat_dm_dir = request.form.get("lat_dm_dir", "")
-    lon_dm_deg = request.form.get("lon_dm_deg", "")
-    lon_dm_min = request.form.get("lon_dm_min", "")
-    lon_dm_dir = request.form.get("lon_dm_dir", "")
+    lat_dms_deg = form.get("lat_dms_deg", "")
+    lat_dms_min = form.get("lat_dms_min", "")
+    lat_dms_sec = form.get("lat_dms_sec", "")
+    lat_dms_dir = form.get("lat_dms_dir", "")
+    lon_dms_deg = form.get("lon_dms_deg", "")
+    lon_dms_min = form.get("lon_dms_min", "")
+    lon_dms_sec = form.get("lon_dms_sec", "")
+    lon_dms_dir = form.get("lon_dms_dir", "")
+    lat_dm_deg = form.get("lat_dm_deg", "")
+    lat_dm_min = form.get("lat_dm_min", "")
+    lat_dm_dir = form.get("lat_dm_dir", "")
+    lon_dm_deg = form.get("lon_dm_deg", "")
+    lon_dm_min = form.get("lon_dm_min", "")
+    lon_dm_dir = form.get("lon_dm_dir", "")
 
     lat_dd = None
     lon_dd = None
@@ -804,11 +821,9 @@ def save_event():
         lon_dd = _parse_decimal_coordinate(lon_str, False)
 
     if lat_alt_used and lat_dd is None:
-        flash("Invalid latitude in DMS/DDM fields", "error")
-        return redirect(request.referrer or url_for("index"))
+        return None, ["Invalid latitude in DMS/DDM fields"]
     if lon_alt_used and lon_dd is None:
-        flash("Invalid longitude in DMS/DDM fields", "error")
-        return redirect(request.referrer or url_for("index"))
+        return None, ["Invalid longitude in DMS/DDM fields"]
 
     if lat_dd is not None:
         # Keep the precision the user typed for a plain decimal; DMS/DDM
@@ -818,15 +833,15 @@ def save_event():
     if lon_dd is not None:
         lon_decimals = None if lon_alt_used else _coord_decimal_places(lon_str)
         lon_str = _normalize_decimal_coord(lon_dd, lon_decimals)
-    elev_str = request.form.get("elevation", "").strip()
-    accuracy_str = request.form.get("gpsAccuracy", "").strip()
-    collectors_raw = request.form.get("collectors", "").strip()
+    elev_str = form.get("elevation", "").strip()
+    accuracy_str = form.get("gpsAccuracy", "").strip()
+    collectors_raw = form.get("collectors", "").strip()
     collectors = [c.strip() for c in collectors_raw.split(",") if c.strip()] if collectors_raw else []
 
     # Validate and normalize date fields
-    created_raw = request.form.get("createdAt", "").strip()
-    start_raw = request.form.get("startDateTime", "").strip()
-    end_raw = request.form.get("endDateTime", "").strip()
+    created_raw = form.get("createdAt", "").strip()
+    start_raw = form.get("startDateTime", "").strip()
+    end_raw = form.get("endDateTime", "").strip()
     if created_raw:
         created_at = _parse_datetime(created_raw)
     elif start_raw and end_raw:
@@ -847,14 +862,12 @@ def save_event():
     if end_raw and end_dt is None:
         errors.append("Invalid end date/time format")
     if errors:
-        for msg in errors:
-            flash(msg, "error")
-        return redirect(request.referrer or url_for("index"))
+        return None, errors
 
-    submitted_uuid = "" if save_as_copy else request.form.get("uuid", "").strip()
-    is_trap = request.form.get("isTrapSample") == "1"
-    trap_code = request.form.get("trapCode", "").strip() if is_trap else ""
-    collection_code = request.form.get("collectionCode", "").strip()
+    submitted_uuid = "" if save_as_copy else form.get("uuid", "").strip()
+    is_trap = form.get("isTrapSample") == "1"
+    trap_code = form.get("trapCode", "").strip() if is_trap else ""
+    collection_code = form.get("collectionCode", "").strip()
     if is_trap and trap_code:
         # Trap sample IDs are always derived (the form hides the ID box).
         collection_code = _trap_event_id(trap_code, end_dt)
@@ -869,13 +882,13 @@ def save_event():
         "elevation": _safe_int(elev_str),
         "gpsAccuracy": _safe_float(accuracy_str),
         "createdAt": created_at,
-        "country": request.form.get("country", ""),
-        "stateProvince": abbreviate_state(request.form.get("stateProvince", "")),
-        "county": request.form.get("county", ""),
-        "locality": request.form.get("locality", ""),
-        "host": request.form.get("host", ""),
-        "collectionTechnique": request.form.get("collectionTechnique") or None,
-        "notes": request.form.get("notes", ""),
+        "country": form.get("country", ""),
+        "stateProvince": abbreviate_state(form.get("stateProvince", "")),
+        "county": form.get("county", ""),
+        "locality": form.get("locality", ""),
+        "host": form.get("host", ""),
+        "collectionTechnique": form.get("collectionTechnique") or None,
+        "notes": form.get("notes", ""),
         "startDateTime": start_dt,
         "endDateTime": end_dt,
         "collectors": collectors,
@@ -883,6 +896,64 @@ def save_event():
         "modifiedAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
         "photos": [],
     }
+    layout = {}
+    max_lines_raw = form.get("labelMaxLines", "").strip()
+    if max_lines_raw.isdigit() and 1 <= int(max_lines_raw) <= 12:
+        layout["maxLines"] = int(max_lines_raw)
+    import label_formatter  # module import: the tests stub this module partially
+    for key, _setting, _label, _example in getattr(label_formatter, "LAYOUT_OPTIONS", []):
+        if form.get(f"layout_{key}") == "1":
+            layout[key] = True
+    if layout:
+        event["labelLayout"] = layout
+    return event, []
+
+
+@app.route("/api/label_preview", methods=["POST"])
+def api_label_preview():
+    """Lay out the edit form's current contents exactly as printing would, so
+    the form can show the label and warn when it runs past maxLines."""
+    global _cached_events
+    if _cached_events is None:
+        _load_events()
+    event, errors = _event_from_form(request.form)
+    if errors:
+        return jsonify({"errors": errors})
+    event["coordPrecision"] = _source_coord_precision(request.form.get("idx"))
+    settings = load_settings()
+    labels = [lines for lines, _qty in format_event_labels(event, 1, settings)]
+    import label_formatter  # module import: the tests stub this module partially
+    max_lines = int(label_formatter.event_settings(event, settings).get("maxLines") or 0)
+    used = [sum(1 for ln in lines if ln.strip()) for lines in labels]
+    return jsonify({
+        "labels": labels,
+        "maxLines": max_lines,
+        "contentLines": sum(used),
+        "labelWidthIn": settings.get("labelWidth"),
+        "errors": [],
+    })
+
+
+@app.route("/event/save", methods=["POST"])
+def save_event():
+    global _cached_events
+    if _cached_events is None:
+        _load_events()
+
+    idx = request.form.get("idx")
+    # "Duplicate" on the edit page submits the form as it stands; the copy
+    # gets a fresh uuid and the original stays as last saved.
+    save_as_copy = request.form.get("saveAsCopy") == "1"
+    source_idx = idx
+    if save_as_copy:
+        idx = None
+    is_edit = idx is not None and idx != ""
+
+    event, errors = _event_from_form(request.form, save_as_copy)
+    if errors:
+        for msg in errors:
+            flash(msg, "error")
+        return redirect(request.referrer or url_for("index"))
 
     if is_edit:
         idx_int = int(idx)
@@ -898,7 +969,7 @@ def save_event():
         event["archived"] = False
         event["labelsPrinted"] = False
         if save_as_copy:
-            if is_trap:
+            if event.get("isTrapSample"):
                 # Next sample from the same trap: it starts when the last one ended.
                 event["startDateTime"] = event["endDateTime"] or event["startDateTime"]
                 event["endDateTime"] = None
@@ -918,6 +989,20 @@ def save_event():
     # Stay on the form after saving so the event can be duplicated or tweaked.
     target_idx = int(idx) if is_edit else len(_cached_events) - 1
     return redirect(url_for("edit_event", idx=target_idx))
+
+
+def _layout_template_args():
+    """Options for the edit page's per-event label fitting controls."""
+    import label_formatter
+    settings = load_settings()
+    return {
+        "default_max_lines": settings.get("maxLines"),
+        "layout_options": [
+            {"key": key, "label": label, "example": example,
+             "global_on": bool(settings.get(setting_key))}
+            for key, setting_key, label, example in label_formatter.LAYOUT_OPTIONS
+        ],
+    }
 
 
 def _general_ids(exclude_uuid=None):

@@ -159,16 +159,52 @@ _MONTH_ABBR = {
 }
 
 
-def _format_date(iso_str, fmt="roman"):
-    """Convert stored date/datetime to display format."""
-    d = _parse_date_obj(iso_str)
-    if not d:
-        return ""
+_PARTIAL_DATE_RE = re.compile(r"^(\d{4})(?:-(\d{1,2}))?$")
+
+
+def _date_parts(value):
+    """Stored date -> (year, month or None, day or None), or None.
+
+    Accepts full dates/datetimes plus the partial forms "YYYY-MM" and "YYYY",
+    used when a trap sample's exact day is unknown.
+    """
+    if not value:
+        return None
+    v = str(value).strip()
+    m = _PARTIAL_DATE_RE.match(v)
+    if m:
+        year = int(m.group(1))
+        month = int(m.group(2)) if m.group(2) else None
+        if month is not None and not 1 <= month <= 12:
+            return None
+        return (year, month, None)
+    d = _parse_date_obj(v)
+    return (d.year, d.month, d.day) if d else None
+
+
+def _fmt_parts(parts, fmt, with_year=True):
+    year, month, day = parts
     if fmt == "iso":
-        return d.isoformat()
+        out = f"{year:04d}" + (f"-{month:02d}" if month else "") + (f"-{day:02d}" if day else "")
+        return out
     if fmt == "dmy":
-        return f"{d.day} {_MONTH_ABBR[d.month]} {d.year}"
-    return f"{d.day}.{_ROMAN_MONTHS[d.month]}.{d.year}"
+        bits = ([str(day)] if day else []) + ([_MONTH_ABBR[month]] if month else [])
+        if with_year:
+            bits.append(str(year))
+        return " ".join(bits)
+    bits = ([str(day)] if day else []) + ([_ROMAN_MONTHS[month]] if month else [])
+    if with_year:
+        bits.append(str(year))
+    return ".".join(bits)
+
+
+def _format_date(iso_str, fmt="roman"):
+    """Convert stored date/datetime to display format. Partial dates print
+    only what is known: viii.2024, or just 2024."""
+    parts = _date_parts(iso_str)
+    if not parts:
+        return ""
+    return _fmt_parts(parts, fmt)
 
 
 def _format_date_range(start_iso, end_iso, fmt="roman"):
@@ -180,41 +216,32 @@ def _format_date_range(start_iso, end_iso, fmt="roman"):
     if not end_iso:
         return _format_date(start_iso, fmt)
 
-    start = _parse_date_obj(start_iso)
-    end = _parse_date_obj(end_iso)
+    start = _date_parts(start_iso)
+    end = _date_parts(end_iso)
     if not start or not end:
         return _format_date(start_iso, fmt) or _format_date(end_iso, fmt)
 
+    if start == end:
+        return _fmt_parts(start, fmt)
+
     if fmt == "iso":
-        if start == end:
-            return start.isoformat()
-        return f"{start.isoformat()} – {end.isoformat()}"
+        return f"{_fmt_parts(start, fmt)} – {_fmt_parts(end, fmt)}"
 
-    if fmt == "dmy":
-        if start.year == end.year and start.month == end.month:
-            return f"{start.day}–{end.day} {_MONTH_ABBR[start.month]} {start.year}"
-        if start.year == end.year:
-            return (
-                f"{start.day} {_MONTH_ABBR[start.month]} – "
-                f"{end.day} {_MONTH_ABBR[end.month]} {start.year}"
-            )
-        return (
-            f"{start.day} {_MONTH_ABBR[start.month]} {start.year} – "
-            f"{end.day} {_MONTH_ABBR[end.month]} {end.year}"
-        )
+    sep = " – " if fmt == "dmy" else "–"
+    same_year = start[0] == end[0]
+    both_days = start[2] is not None and end[2] is not None
+    same_month = same_year and start[1] is not None and start[1] == end[1]
 
-    # roman (default)
-    if start.year == end.year and start.month == end.month:
-        return f"{start.day}–{end.day}.{_ROMAN_MONTHS[start.month]}.{start.year}"
-    if start.year == end.year:
-        return (
-            f"{start.day}.{_ROMAN_MONTHS[start.month]}–"
-            f"{end.day}.{_ROMAN_MONTHS[end.month]}.{start.year}"
-        )
-    return (
-        f"{start.day}.{_ROMAN_MONTHS[start.month]}.{start.year}–"
-        f"{end.day}.{_ROMAN_MONTHS[end.month]}.{end.year}"
-    )
+    if same_month and both_days:
+        # 1–13.viii.2026 / 1–13 AUG 2026
+        tail = _fmt_parts(end, fmt)
+        if fmt == "dmy":
+            return f"{start[2]}–{tail}"
+        return f"{start[2]}–{tail}"
+    if same_year and start[1] is not None:
+        # 3.vii–viii.2024, vii–viii.2024, 4.vii–26.viii.2026
+        return f"{_fmt_parts(start, fmt, with_year=False)}{sep}{_fmt_parts(end, fmt)}"
+    return f"{_fmt_parts(start, fmt)}{sep}{_fmt_parts(end, fmt)}"
 
 
 def _do_wrap(text, max_width, break_pattern,
@@ -257,7 +284,7 @@ def _do_wrap(text, max_width, break_pattern,
 
 def _pack_fields(fields, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
                  split_kinds=frozenset(), dot_break_kinds=frozenset(),
-                 force_break_before=None):
+                 force_break_before=None, hyphen_kinds=frozenset()):
     """Greedily pack fields onto lines, joined with "; ".
 
     ``fields`` is a list of ``(kind, text)`` pairs, where kind is one of the
@@ -268,6 +295,9 @@ def _pack_fields(fields, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
                          being placed whole on a fresh line.
     ``dot_break_kinds``  fields that may additionally break at "." — used to
                          wrap dates and coordinates mid-value.
+    ``hyphen_kinds``     fields that may also break after a hyphen inside a
+                         word (Haut-Saint-|Laurent). Letter-hyphen-letter only,
+                         so a minus sign or a date range is never split.
 
     A field not named in ``split_kinds`` is never split, with one unavoidable
     exception: a field physically wider than the label has nowhere else to go.
@@ -285,6 +315,8 @@ def _pack_fields(fields, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
             continue
 
         pattern = r"[. ]" if kind in dot_break_kinds else r" "
+        if kind in hyphen_kinds:
+            pattern = r"(?:" + pattern + r"|(?<=[^\W\d_])-(?=[^\W\d_]))"
         forced = force_break_before is not None and i == force_break_before
 
         if forced and current:
@@ -328,13 +360,15 @@ def _pack_fields(fields, max_width, font_name=FONT_NAME, font_size=FONT_SIZE,
     return lines
 
 
-def _rungs(locality_idx, allow_date_dot, allow_coord_dot):
+def _rungs(locality_idx, allow_date_dot, allow_coord_dot, allow_host_split=False,
+           allow_hyphen=False):
     """The layout ladder, in order of increasing concession.
 
     Each rung is a kwargs dict for _pack_fields. The first rung whose result
     fits within max_lines wins; if none do, the caller overflows onto a second
     label using the last rung. Font size and label width are never touched —
-    those are the user's settings, not ours to adjust.
+    those are the user's settings, not ours to adjust. Each later rung keeps
+    every concession granted before it.
     """
     ladder = []
 
@@ -351,26 +385,46 @@ def _rungs(locality_idx, allow_date_dot, allow_coord_dot):
     # left out — it is a taxon name and should not wrap mid-binomial; letting it
     # flow saved only one event in 180 and is not worth splitting a species.
     flow = {LOCALITY, COLLECTORS, TECHNIQUE}
-    ladder.append(dict(split_kinds=set(flow)))
+    dots = set()
+    hyphens = set()
+
+    def add_rung():
+        ladder.append(dict(split_kinds=set(flow), dot_break_kinds=set(dots),
+                           hyphen_kinds=set(hyphens)))
+
+    add_rung()
+
+    # 3a. Per-event opt-in: break hyphenated place names (Haut-Saint-|Laurent).
+    if allow_hyphen:
+        hyphens = hyphens | {LOCALITY, TECHNIQUE}
+        add_rung()
+
+    # 3b. Per-event opt-in: let host flow too. Off by default for the reason
+    # above; the user turns it on for an event they are fitting by eye.
+    if allow_host_split:
+        flow = flow | {HOST}
+        if allow_hyphen:
+            hyphens = hyphens | {HOST}
+        add_rung()
 
     # 4. Break the date mid-value at a ".".
-    dots = set()
     if allow_date_dot:
         flow = flow | {DATE}
         dots = dots | {DATE}
-        ladder.append(dict(split_kinds=set(flow), dot_break_kinds=set(dots)))
+        add_rung()
 
     # 5. Break the coordinates mid-value at a ".".
     if allow_coord_dot:
         flow = flow | {COORDS}
         dots = dots | {COORDS}
-        ladder.append(dict(split_kinds=set(flow), dot_break_kinds=set(dots)))
+        add_rung()
 
     return ladder
 
 
 def _lay_out(fields, max_width, max_lines, locality_idx,
-             allow_date_dot, allow_coord_dot, font_name, font_size):
+             allow_date_dot, allow_coord_dot, font_name, font_size,
+             allow_host_split=False, allow_hyphen=False):
     """Run the ladder. Returns a list of labels, each a list of lines.
 
     Returns more than one label only when the content cannot be made to fit in
@@ -378,7 +432,8 @@ def _lay_out(fields, max_width, max_lines, locality_idx,
     split on a field boundary so no value is cut in half.
     """
     cfg = dict(font_name=font_name, font_size=font_size)
-    ladder = _rungs(locality_idx, allow_date_dot, allow_coord_dot)
+    ladder = _rungs(locality_idx, allow_date_dot, allow_coord_dot, allow_host_split,
+                    allow_hyphen)
 
     for rung in ladder:
         lines = _pack_fields(fields, max_width, **cfg, **rung)
@@ -395,10 +450,12 @@ def _lay_out(fields, max_width, max_lines, locality_idx,
     for k in range(len(fields) - 1, 0, -1):
         head = _lay_out(fields[:k], max_width, max_lines,
                         locality_idx if (locality_idx or 0) < k else None,
-                        allow_date_dot, allow_coord_dot, font_name, font_size)
+                        allow_date_dot, allow_coord_dot, font_name, font_size,
+                        allow_host_split, allow_hyphen)
         if len(head) == 1:
             tail = _lay_out(fields[k:], max_width, max_lines, None,
-                            allow_date_dot, allow_coord_dot, font_name, font_size)
+                            allow_date_dot, allow_coord_dot, font_name, font_size,
+                            allow_host_split, allow_hyphen)
             return head + tail
 
     # Degenerate: the very first field alone needs more than max_lines. There is
@@ -418,6 +475,8 @@ def _label_config(settings):
         # ever loosens breaking for its own field kind.
         allow_date_dot = settings.get("allowDateDotBreak", True)
         allow_coord_dot = settings.get("allowCoordDotBreak", True)
+        allow_host_split = settings.get("splitHostField", False)
+        allow_hyphen = settings.get("hyphenBreak", False)
         date_format = settings.get("dateFormat", "roman")
         label_width_cm = settings.get("labelWidth", 1.76)
         _ensure_font_registered(font_name)
@@ -428,6 +487,8 @@ def _label_config(settings):
         max_lines = MAX_LINES
         allow_date_dot = True
         allow_coord_dot = True
+        allow_host_split = False
+        allow_hyphen = False
         date_format = "roman"
         label_width_cm = 1.76
 
@@ -441,6 +502,8 @@ def _label_config(settings):
         "max_lines": max_lines,
         "allow_date_dot": allow_date_dot,
         "allow_coord_dot": allow_coord_dot,
+        "allow_host_split": allow_host_split,
+        "allow_hyphen": allow_hyphen,
         "date_format": date_format,
         # cm to points, +5% width
         "label_width": label_width_cm * 28.3465 * 1.05,
@@ -566,7 +629,8 @@ def format_event_all_labels(event, settings=None, exclude_host=False):
 
     labels = _lay_out(fields, cfg["label_width"], cfg["max_lines"], locality_idx,
                       cfg["allow_date_dot"], cfg["allow_coord_dot"],
-                      cfg["font_name"], cfg["font_size"])
+                      cfg["font_name"], cfg["font_size"], cfg["allow_host_split"],
+                      cfg["allow_hyphen"])
 
     # Keep a minimum physical label height for easier cutting/handling.
     for lines in labels:
@@ -574,6 +638,37 @@ def format_event_all_labels(event, settings=None, exclude_host=False):
             lines.append("")
 
     return labels
+
+
+# Per-event fitting options (event["labelLayout"]), set from the edit page.
+# Each only ever loosens layout for that event; none can tighten a global
+# setting. Listed in the order the ladder tries them.
+LAYOUT_OPTIONS = [
+    ("hyphenBreak", "hyphenBreak", "Break hyphenated names", "Haut-Saint-|Laurent"),
+    ("hostWrap", "splitHostField", "Wrap host", "host may continue onto the next line"),
+    ("dateBreak", "allowDateDotBreak", "Break date", "3.viii–|1.x.2024"),
+    ("coordBreak", "allowCoordDotBreak", "Break coordinates", "45.|0228"),
+]
+
+
+def event_settings(event, settings=None):
+    """Global print settings with this event's own label layout applied.
+
+    ``labelLayout`` may hold ``maxLines`` (line cap for this event only) and
+    any of the LAYOUT_OPTIONS keys set true. The older single ``breakFields``
+    flag turns them all on.
+    """
+    layout = (event or {}).get("labelLayout") or {}
+    if not layout:
+        return settings
+    merged = dict(settings or {})
+    if layout.get("maxLines"):
+        merged["maxLines"] = int(layout["maxLines"])
+        merged["minLines"] = min(merged.get("minLines", MIN_LINES), merged["maxLines"])
+    for key, setting_key, _label, _example in LAYOUT_OPTIONS:
+        if layout.get(key) or layout.get("breakFields"):
+            merged[setting_key] = True
+    return merged
 
 
 def format_event_labels(event, qty, settings=None):
@@ -588,6 +683,7 @@ def format_event_labels(event, qty, settings=None):
 
     Both can happen at once, so this may return three or more labels.
     """
+    settings = event_settings(event, settings)
     split = settings.get("splitHostLabel", False) if settings else False
     host = event.get("host")
 
@@ -600,7 +696,8 @@ def format_event_labels(event, qty, settings=None):
         host_labels = _lay_out([(HOST, host)], cfg["label_width"],
                                cfg["max_lines"], None,
                                cfg["allow_date_dot"], cfg["allow_coord_dot"],
-                               cfg["font_name"], cfg["font_size"])
+                               cfg["font_name"], cfg["font_size"],
+                               cfg["allow_host_split"], cfg["allow_hyphen"])
         for lines in host_labels:
             while len(lines) < cfg["min_lines"]:
                 lines.append("")

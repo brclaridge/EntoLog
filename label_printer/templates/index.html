@@ -140,7 +140,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}{% set fit = label_fit(item.event) %}{% if fit %}<span class="fit-badge fit-{{ fit.state }}" title="{% if fit.labels > 1 %}{{ fit.lines }} lines: over the {{ fit.max }}-line limit, prints as {{ fit.labels }} labels{% else %}{{ fit.lines }} of {{ fit.max }} lines{% endif %}">{% if fit.labels > 1 %}{{ fit.lines }}/{{ fit.max }} &middot; {{ fit.labels }} labels{% else %}{{ fit.lines }}/{{ fit.max }}{% endif %}</span>{% endif %}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -238,7 +238,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}{% set fit = label_fit(item.event) %}{% if fit %}<span class="fit-badge fit-{{ fit.state }}" title="{% if fit.labels > 1 %}{{ fit.lines }} lines: over the {{ fit.max }}-line limit, prints as {{ fit.labels }} labels{% else %}{{ fit.lines }} of {{ fit.max }} lines{% endif %}">{% if fit.labels > 1 %}{{ fit.lines }}/{{ fit.max }} &middot; {{ fit.labels }} labels{% else %}{{ fit.lines }}/{{ fit.max }}{% endif %}</span>{% endif %}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -337,7 +337,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}{% set fit = label_fit(item.event) %}{% if fit %}<span class="fit-badge fit-{{ fit.state }}" title="{% if fit.labels > 1 %}{{ fit.lines }} lines: over the {{ fit.max }}-line limit, prints as {{ fit.labels }} labels{% else %}{{ fit.lines }} of {{ fit.max }} lines{% endif %}">{% if fit.labels > 1 %}{{ fit.lines }}/{{ fit.max }} &middot; {{ fit.labels }} labels{% else %}{{ fit.lines }}/{{ fit.max }}{% endif %}</span>{% endif %}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
@@ -436,7 +436,7 @@
                                data-uuid="{{ item.event.uuid }}"
                                {% if item.event.archived or item.event.labelsPrinted %}checked{% endif %}>
                     </td>
-                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}</td>
+                    <td{% if item.event.collectionCode and list_event_id(item.event) != item.event.collectionCode %} title="Event ID: {{ item.event.collectionCode }}"{% endif %}>{{ list_event_id(item.event) }}{% set fit = label_fit(item.event) %}{% if fit %}<span class="fit-badge fit-{{ fit.state }}" title="{% if fit.labels > 1 %}{{ fit.lines }} lines: over the {{ fit.max }}-line limit, prints as {{ fit.labels }} labels{% else %}{{ fit.lines }} of {{ fit.max }} lines{% endif %}">{% if fit.labels > 1 %}{{ fit.lines }}/{{ fit.max }} &middot; {{ fit.labels }} labels{% else %}{{ fit.lines }}/{{ fit.max }}{% endif %}</span>{% endif %}</td>
                     <td>{{ item.event.country or "" }}</td>
                     <td>{{ item.event.stateProvince or "" }}</td>
                     <td>{{ item.event.county or "" }}</td>
